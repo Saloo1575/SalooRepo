@@ -1,0 +1,86 @@
+name: Repository validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'repo.json'
+      - 'plugins.json'
+      - '**/*.kt'
+      - '**/*.kts'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'repo.json'
+      - 'plugins.json'
+      - '**/*.kt'
+      - '**/*.kts'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-metadata:
+    name: Validate CloudStream metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate repository files
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          repo = json.loads(Path('repo.json').read_text(encoding='utf-8'))
+          required_repo = {'name', 'manifestVersion', 'pluginLists'}
+          missing = required_repo - repo.keys()
+          if missing:
+              raise SystemExit(f'repo.json missing: {sorted(missing)}')
+          if repo['manifestVersion'] != 1:
+              raise SystemExit('repo.json manifestVersion must be 1')
+          if not isinstance(repo['pluginLists'], list) or not repo['pluginLists']:
+              raise SystemExit('repo.json pluginLists must contain at least one URL')
+          if not all(isinstance(url, str) and url.startswith('https://') for url in repo['pluginLists']):
+              raise SystemExit('repo.json pluginLists must contain HTTPS URLs')
+
+          plugins = json.loads(Path('plugins.json').read_text(encoding='utf-8'))
+          if not isinstance(plugins, list):
+              raise SystemExit('plugins.json must be a JSON array')
+          required_plugin = {'url', 'status', 'version', 'apiVersion', 'name', 'internalName', 'authors'}
+          names = set()
+          for index, plugin in enumerate(plugins):
+              missing = required_plugin - plugin.keys()
+              if missing:
+                  raise SystemExit(f'plugins[{index}] missing: {sorted(missing)}')
+              if not isinstance(plugin['url'], str) or not plugin['url'].startswith('https://'):
+                  raise SystemExit(f'plugins[{index}].url must be an HTTPS URL')
+              if plugin['internalName'] in names:
+                  raise SystemExit(f'duplicate internalName: {plugin["internalName"]}')
+              names.add(plugin['internalName'])
+          print(f'Validated {len(plugins)} plugin entries.')
+          PY
+
+  build-providers:
+    name: Build providers
+    needs: validate-metadata
+    if: ${{ hashFiles('gradlew') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build CloudStream providers
+        run: chmod +x gradlew && ./gradlew --no-daemon make
