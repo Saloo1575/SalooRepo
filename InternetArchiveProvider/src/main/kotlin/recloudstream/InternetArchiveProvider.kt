@@ -3,7 +3,7 @@ package recloudstream
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.ErrorLoadingException
-import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.ExtractorLink
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SearchResponse
@@ -38,50 +38,7 @@ class InternetArchiveProvider : MainAPI() {
 
             val json = app.get(url).text
             val result = mapper.readValue<SearchResult>(json)
-result.files
-    .mapNotNull { file ->
-        val filename = file.name.lowercase()
-        val format = file.format.lowercase()
 
-        val subtitle =
-            filename.endsWith(".srt") ||
-            filename.endsWith(".vtt") ||
-            filename.endsWith(".ass") ||
-            filename.endsWith(".ssa") ||
-            format.contains("subrip") ||
-            format.contains("webvtt")
-
-        if (!subtitle) {
-            null
-        } else {
-            val language = when {
-                Regex("""(^|[._-])(tr|tur)([._-]|$)""").containsMatchIn(filename) ||
-                filename.contains("turkish") ||
-                filename.contains("türkçe") ->
-                    "Turkish"
-
-                Regex("""(^|[._-])(en|eng)([._-]|$)""").containsMatchIn(filename) ||
-                filename.contains("english") ->
-                    "English"
-
-                else -> null
-            }
-
-            language?.let { Triple(it, file.name, file) }
-        }
-    }
-    .sortedBy {
-        if (it.first == "Turkish") 0 else 1
-    }
-    .forEach { (language, fileName, _) ->
-        subtitleCallback(
-            SubtitleFile(
-                language,
-                "$mainUrl/download/$identifier/$fileName"
-            )
-        )
-    }
-            
             result.response.docs.map { item ->
                 newMovieSearchResponse(
                     item.title ?: item.identifier,
@@ -125,12 +82,68 @@ result.files
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+
         return try {
             val identifier = data.substringAfterLast("/")
 
             val json = app.get("$mainUrl/metadata/$identifier").text
             val result = mapper.readValue<MetadataResult>(json)
 
+            // Altyazıları bul ve Türkçe > İngilizce önceliğiyle gönder.
+            result.files
+                .mapNotNull { file ->
+                    val filename = file.name.lowercase()
+                    val format = file.format.lowercase()
+
+                    val isSubtitle =
+                        filename.endsWith(".srt") ||
+                        filename.endsWith(".vtt") ||
+                        filename.endsWith(".ass") ||
+                        filename.endsWith(".ssa") ||
+                        format.contains("subrip") ||
+                        format.contains("webvtt") ||
+                        format.contains("subtitle")
+
+                    if (!isSubtitle) {
+                        null
+                    } else {
+                        val language = when {
+                            filename.contains("turkish") ||
+                            filename.contains("türkçe") ||
+                            Regex("""(^|[._-])(tr|tur)([._-]|$)""")
+                                .containsMatchIn(filename) ->
+                                "Turkish"
+
+                            filename.contains("english") ||
+                            Regex("""(^|[._-])(en|eng)([._-]|$)""")
+                                .containsMatchIn(filename) ->
+                                "English"
+
+                            else -> null
+                        }
+
+                        language?.let {
+                            Triple(it, file.name, file)
+                        }
+                    }
+                }
+                .sortedBy {
+                    if (it.first == "Turkish") 0 else 1
+                }
+                .forEach { (language, fileName, _) ->
+
+                    val subtitleUrl =
+                        "$mainUrl/download/$identifier/$fileName"
+
+                    subtitleCallback(
+                        SubtitleFile(
+                            language,
+                            subtitleUrl
+                        )
+                    )
+                }
+
+            // Video dosyalarını bul.
             result.files
                 .filter { file ->
                     val format = file.format.lowercase()
@@ -142,22 +155,24 @@ result.files
                     format.endsWith("mp4")
                 }
                 .forEach { file ->
+
                     val directUrl =
                         "$mainUrl/download/$identifier/${file.name}"
 
                     callback(
                         newExtractorLink(
-    source = name,
-    name = file.name,
-    url = directUrl
-) {
-    referer = "$mainUrl/"
-    quality = Qualities.Unknown.value
-}
+                            source = name,
+                            name = file.name,
+                            url = directUrl
+                        ) {
+                            quality = Qualities.Unknown.value
+                            referer = "$mainUrl/"
+                        }
                     )
                 }
 
             true
+
         } catch (_: Exception) {
             false
         }
