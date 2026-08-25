@@ -18,16 +18,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check provider domains
-        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ ! -f providers.json ]; then
-            echo "providers.json bulunamadı."
-            echo "Henüz provider tanımlanmadığı için kontrol tamamlandı."
-            exit 0
-          fi
-
           python - <<'PY'
           import json
+          import subprocess
           import urllib.request
           from urllib.parse import urlparse
 
@@ -37,15 +33,16 @@ jobs:
           providers = data.get("providers", [])
 
           for provider in providers:
-              name = provider.get("name", "Bilinmeyen")
+              if not provider.get("enabled", True):
+                  continue
+
+              name = provider.get("name", "Unknown")
               url = provider.get("url")
 
               if not url:
-                  print(f"[WARN] {name}: URL yok")
                   continue
 
-              parsed = urlparse(url)
-              domain = parsed.netloc
+              old_domain = urlparse(url).netloc
 
               try:
                   req = urllib.request.Request(
@@ -53,18 +50,34 @@ jobs:
                       headers={"User-Agent": "SalooRepo-DomainCheck/1.0"}
                   )
 
-                  with urllib.request.urlopen(req, timeout=15) as response:
+                  with urllib.request.urlopen(req, timeout=20) as response:
                       final_url = response.geturl()
-                      final_domain = urlparse(final_url).netloc
 
-                  if final_domain and final_domain != domain:
-                      print(
-                          f"[DOMAIN-CHANGED] {name}: "
-                          f"{domain} -> {final_domain}"
+                  new_domain = urlparse(final_url).netloc
+
+                  if new_domain and new_domain != old_domain:
+                      title = f"Domain changed: {name}"
+                      body = (
+                          f"Provider: **{name}**\n\n"
+                          f"Configured URL: `{url}`\n\n"
+                          f"Detected final URL: `{final_url}`\n\n"
+                          f"Detected domain change: `{old_domain}` → `{new_domain}`"
                       )
+
+                      subprocess.run(
+                          [
+                              "gh", "issue", "create",
+                              "--title", title,
+                              "--body", body,
+                              "--label", "domain-change"
+                          ],
+                          check=False
+                      )
+
+                      print(f"[DOMAIN-CHANGED] {name}: {old_domain} -> {new_domain}")
                   else:
-                      print(f"[OK] {name}: {domain}")
+                      print(f"[OK] {name}: {old_domain}")
 
               except Exception as e:
-                  print(f"[CHECK-FAILED] {name}: {url} - {e}")
+                  print(f"[CHECK-FAILED] {name}: {e}")
           PY
