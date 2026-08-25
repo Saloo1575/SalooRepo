@@ -1,6 +1,6 @@
 {
-  "name": "SalooRepo",
-  "description": "CloudStream uyumlu, lisansı uygun eklenti deposu.",
+  "name": "SALOORepo",
+  "description": "SALOORepo – CloudStream uyumlu eklenti deposu.",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/plugins.json"
