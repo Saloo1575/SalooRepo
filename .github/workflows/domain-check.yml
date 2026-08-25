@@ -1,0 +1,70 @@
+name: Domain Change Check
+
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  domain-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check provider domains
+        shell: bash
+        run: |
+          if [ ! -f providers.json ]; then
+            echo "providers.json bulunamadı."
+            echo "Henüz provider tanımlanmadığı için kontrol tamamlandı."
+            exit 0
+          fi
+
+          python - <<'PY'
+          import json
+          import urllib.request
+          from urllib.parse import urlparse
+
+          with open("providers.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          providers = data.get("providers", [])
+
+          for provider in providers:
+              name = provider.get("name", "Bilinmeyen")
+              url = provider.get("url")
+
+              if not url:
+                  print(f"[WARN] {name}: URL yok")
+                  continue
+
+              parsed = urlparse(url)
+              domain = parsed.netloc
+
+              try:
+                  req = urllib.request.Request(
+                      url,
+                      headers={"User-Agent": "SalooRepo-DomainCheck/1.0"}
+                  )
+
+                  with urllib.request.urlopen(req, timeout=15) as response:
+                      final_url = response.geturl()
+                      final_domain = urlparse(final_url).netloc
+
+                  if final_domain and final_domain != domain:
+                      print(
+                          f"[DOMAIN-CHANGED] {name}: "
+                          f"{domain} -> {final_domain}"
+                      )
+                  else:
+                      print(f"[OK] {name}: {domain}")
+
+              except Exception as e:
+                  print(f"[CHECK-FAILED] {name}: {url} - {e}")
+          PY
