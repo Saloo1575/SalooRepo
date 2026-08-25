@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "*.md"
   workflow_dispatch:
 
 permissions:
@@ -28,24 +26,24 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
-
-      - name: Build CloudStream plugins
+      - name: Build plugins
         run: |
+          chmod +x gradlew
           ./gradlew make
           ./gradlew makePluginsJson
 
-      - name: Show generated files
+      - name: List generated files
         run: |
-          echo "Generated plugins:"
-          find . -type f \( -name "*.cs3" -o -name "plugins.json" \) -print
+          echo "CS3 files:"
+          find . -type f -name "*.cs3" -print
+          echo "Plugin JSON:"
+          find . -type f -name "plugins.json" -print
 
-      - name: Upload build artifacts
+      - name: Upload CloudStream plugins
         uses: actions/upload-artifact@v4
         with:
           name: saloo-repo-build
           path: |
-            **/build/*.cs3
-            build/plugins.json
-          if-no-files-found: warn
+            **/*.cs3
+            **/build/plugins.json
+          if-no-files-found: error
