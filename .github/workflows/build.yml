@@ -1,4 +1,4 @@
-name: Build CloudStream Plugins
+name: Build and Publish CloudStream Plugins
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -29,21 +29,23 @@ jobs:
       - name: Build plugins
         run: |
           chmod +x gradlew
-          ./gradlew make
-          ./gradlew makePluginsJson
+          ./gradlew make makePluginsJson
 
-      - name: List generated files
+      - name: Prepare builds branch
         run: |
-          echo "CS3 files:"
-          find . -type f -name "*.cs3" -print
-          echo "Plugin JSON:"
-          find . -type f -name "plugins.json" -print
+          mkdir -p /tmp/saloo-builds
+          cp repo.json /tmp/saloo-builds/repo.json
 
-      - name: Upload CloudStream plugins
-        uses: actions/upload-artifact@v4
+          if [ -f build/plugins.json ]; then
+            cp build/plugins.json /tmp/saloo-builds/plugins.json
+          fi
+
+          find . -type f -name "*.cs3" -exec cp {} /tmp/saloo-builds/ \;
+
+      - name: Publish builds branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          name: saloo-repo-build
-          path: |
-            **/*.cs3
-            **/build/plugins.json
-          if-no-files-found: error
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: builds
+          publish_dir: /tmp/saloo-builds
+          force_orphan: true
