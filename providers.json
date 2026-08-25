@@ -1,4 +1,11 @@
 {
   "version": 1,
-  "providers": []
+  "providers": [
+    {
+      "name": "Internet Archive",
+      "url": "https://archive.org",
+      "category": "official",
+      "enabled": true
+    }
+  ]
 }
