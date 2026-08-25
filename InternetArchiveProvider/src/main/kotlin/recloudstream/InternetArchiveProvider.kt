@@ -3,7 +3,7 @@ package recloudstream
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.ErrorLoadingException
-import com.lagradost.cloudstream3.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SearchResponse
@@ -104,12 +104,13 @@ class InternetArchiveProvider : MainAPI() {
 
                     callback(
                         newExtractorLink(
-                            source = name,
-                            name = file.name,
-                            url = directUrl,
-                            referer = "$mainUrl/",
-                            quality = Qualities.Unknown.value
-                        )
+    source = name,
+    name = file.name,
+    url = directUrl
+) {
+    referer = "$mainUrl/"
+    quality = Qualities.Unknown.value
+}
                     )
                 }
 
