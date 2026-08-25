@@ -74,13 +74,17 @@ jobs:
   build-providers:
     name: Build providers
     needs: validate-metadata
-    if: ${{ hashFiles('gradlew') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect Gradle wrapper
+        id: gradle
+        run: echo \"present=$([ -f gradlew ] && echo true || echo false)\" >> $GITHUB_OUTPUT
       - uses: actions/setup-java@v4
+        if: steps.gradle.outputs.present == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - name: Build CloudStream providers
+        if: steps.gradle.outputs.present == 'true'
         run: chmod +x gradlew && ./gradlew --no-daemon make
