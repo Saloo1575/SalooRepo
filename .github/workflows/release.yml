@@ -1,0 +1,52 @@
+name: Create CloudStream Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build plugins
+        run: |
+          chmod +x gradlew
+          ./gradlew make makePluginsJson
+
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+
+          find . -type f -name "*.cs3" -exec cp {} release-files/ \;
+
+          if [ -f build/plugins.json ]; then
+            cp build/plugins.json release-files/plugins.json
+          fi
+
+          echo "Release files:"
+          find release-files -type f -print
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: "saloo-${{ github.run_number }}"
+          name: "SalooRepo Release ${{ github.run_number }}"
+          generate_release_notes: true
+          files: |
+            release-files/*.cs3
+            release-files/plugins.json
