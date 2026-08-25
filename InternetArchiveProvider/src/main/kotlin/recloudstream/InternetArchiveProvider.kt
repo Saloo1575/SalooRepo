@@ -38,7 +38,50 @@ class InternetArchiveProvider : MainAPI() {
 
             val json = app.get(url).text
             val result = mapper.readValue<SearchResult>(json)
+result.files
+    .mapNotNull { file ->
+        val filename = file.name.lowercase()
+        val format = file.format.lowercase()
 
+        val subtitle =
+            filename.endsWith(".srt") ||
+            filename.endsWith(".vtt") ||
+            filename.endsWith(".ass") ||
+            filename.endsWith(".ssa") ||
+            format.contains("subrip") ||
+            format.contains("webvtt")
+
+        if (!subtitle) {
+            null
+        } else {
+            val language = when {
+                Regex("""(^|[._-])(tr|tur)([._-]|$)""").containsMatchIn(filename) ||
+                filename.contains("turkish") ||
+                filename.contains("türkçe") ->
+                    "Turkish"
+
+                Regex("""(^|[._-])(en|eng)([._-]|$)""").containsMatchIn(filename) ||
+                filename.contains("english") ->
+                    "English"
+
+                else -> null
+            }
+
+            language?.let { Triple(it, file.name, file) }
+        }
+    }
+    .sortedBy {
+        if (it.first == "Turkish") 0 else 1
+    }
+    .forEach { (language, fileName, _) ->
+        subtitleCallback(
+            SubtitleFile(
+                language,
+                "$mainUrl/download/$identifier/$fileName"
+            )
+        )
+    }
+            
             result.response.docs.map { item ->
                 newMovieSearchResponse(
                     item.title ?: item.identifier,
