@@ -3,6 +3,6 @@
   "description": "CloudStream uyumlu, lisansı uygun eklenti deposu.",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/Saloo1575/SalooRepo/main/plugins.json"
+    "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/plugins.json"
   ]
 }
