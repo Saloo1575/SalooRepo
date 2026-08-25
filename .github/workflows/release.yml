@@ -45,7 +45,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: "saloo-${{ github.run_number }}"
-          name: "SalooRepo Release ${{ github.run_number }}"
+         name: "SALOORepo Release ${{ github.run_number }}"
           generate_release_notes: true
           files: |
             release-files/*.cs3
