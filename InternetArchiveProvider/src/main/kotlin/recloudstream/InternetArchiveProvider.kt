@@ -1,4 +1,5 @@
 package recloudstream
+
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.ErrorLoadingException
