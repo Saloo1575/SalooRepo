@@ -1,0 +1,133 @@
+name: Source Discovery
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  discovery:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Discover candidate public sources
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          import urllib.parse
+          import urllib.request
+
+          search_queries = [
+              "site:archive.org metadata API",
+              "site:commons.wikimedia.org API video",
+              "site:media.ccc.de API video",
+              "site:peertube.social API video"
+          ]
+
+          candidates = []
+
+          for query in search_queries:
+              url = (
+                  "https://www.google.com/search?"
+                  + urllib.parse.urlencode({"q": query})
+              )
+
+              try:
+                  req = urllib.request.Request(
+                      url,
+                      headers={"User-Agent": "SalooRepo-Discovery/1.0"}
+                  )
+
+                  with urllib.request.urlopen(req, timeout=15) as response:
+                      html = response.read().decode("utf-8", errors="ignore")
+
+                  print(f"[CHECKED] {query}")
+
+              except Exception as e:
+                  print(f"[SKIPPED] {query}: {e}")
+
+          # Önce mevcut providers.json içindeki kaynakları yükle.
+          try:
+              with open("providers.json", encoding="utf-8") as f:
+                  data = json.load(f)
+
+              known = {
+                  item.get("url")
+                  for item in data.get("providers", [])
+                  if item.get("url")
+              }
+          except Exception:
+              known = set()
+
+          print("Known provider URLs:", len(known))
+
+          # Güvenli aday havuzu.
+          official_candidates = [
+              {
+                  "name": "Internet Archive",
+                  "url": "https://archive.org",
+                  "reason": "Public media/archive API"
+              },
+              {
+                  "name": "Wikimedia Commons",
+                  "url": "https://commons.wikimedia.org",
+                  "reason": "Public media repository"
+              },
+              {
+                  "name": "media.ccc.de",
+                  "url": "https://media.ccc.de",
+                  "reason": "Public conference video platform"
+              }
+          ]
+
+          for candidate in official_candidates:
+              if candidate["url"] not in known:
+                  candidates.append(candidate)
+
+          if not candidates:
+              print("No new candidates found.")
+              raise SystemExit(0)
+
+          body = "# SalooRepo Source Candidates\n\n"
+
+          for candidate in candidates:
+              body += (
+                  f"## {candidate['name']}\n"
+                  f"- URL: `{candidate['url']}`\n"
+                  f"- Reason: {candidate['reason']}\n\n"
+              )
+
+          body += (
+              "These are candidates only. "
+              "No provider has been added automatically. "
+              "Review license, API availability and technical suitability before implementation."
+          )
+
+          subprocess.run(
+              [
+                  "gh",
+                  "issue",
+                  "create",
+                  "--title",
+                  "New source candidates detected",
+                  "--body",
+                  body,
+                  "--label",
+                  "source-discovery"
+              ],
+              check=False
+          )
+
+          print("Discovery report created.")
+          PY
