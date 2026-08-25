@@ -1,0 +1,68 @@
+name: Provider Health Check
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+
+      - name: Check configured provider URLs
+        shell: bash
+        run: |
+          set -e
+
+          if [ ! -f providers.json ]; then
+            echo "providers.json bulunamadı."
+            echo "Henüz provider eklenmediği için kontrol tamamlandı."
+            exit 0
+          fi
+
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          with open("providers.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          providers = data.get("providers", [])
+
+          if not providers:
+              print("Kontrol edilecek provider yok.")
+              raise SystemExit(0)
+
+          for provider in providers:
+              name = provider.get("name", "Bilinmeyen")
+              url = provider.get("url")
+
+              if not url:
+                  print(f"[WARN] {name}: URL yok")
+                  continue
+
+              try:
+                  req = urllib.request.Request(
+                      url,
+                      headers={"User-Agent": "SalooRepo-HealthCheck/1.0"}
+                  )
+
+                  with urllib.request.urlopen(req, timeout=15) as response:
+                      code = response.status
+
+                  if 200 <= code < 400:
+                      print(f"[OK] {name}: {code} - {url}")
+                  else:
+                      print(f"[WARN] {name}: {code} - {url}")
+
+              except Exception as e:
+                  print(f"[DOWN] {name}: {url} - {e}")
+          PY
