@@ -2,10 +2,16 @@
   {
     "name": "IPTV-org Türkiye",
     "internalName": "IPTVOrgTR",
-    "url": "https://raw.githubusercontent.com/SENIN_KULLANICI_ADIN/SALOORepo/builds/IPTVOrgTR.cs3",
+    "url": "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/IPTVOrgTR.cs3",
     "version": 1,
+    "apiVersion": 1,
     "status": 1,
     "language": "tr",
-    "tvTypes": ["Live"]
+    "authors": [
+      "SALOO"
+    ],
+    "tvTypes": [
+      "Live"
+    ]
   }
 ]
