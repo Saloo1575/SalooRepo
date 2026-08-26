@@ -1,3 +1,11 @@
-{
-  "plugins": []
-}
+[
+  {
+    "name": "IPTV-org Türkiye",
+    "internalName": "IPTVOrgTR",
+    "url": "https://raw.githubusercontent.com/SENIN_KULLANICI_ADIN/SALOORepo/builds/IPTVOrgTR.cs3",
+    "version": 1,
+    "status": 1,
+    "language": "tr",
+    "tvTypes": ["Live"]
+  }
+]
