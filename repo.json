@@ -3,6 +3,7 @@
   "description": "SALOO CloudStream Extensions",
   "manifestVersion": 1,
   "pluginLists": [
+    "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/plugins.json",
     "https://raw.githubusercontent.com/Kraptor123/cs-kraptor/builds/plugins.json",
     "https://raw.githubusercontent.com/Kraptor123/Cs-Karma/builds/plugins.json",
     "https://raw.githubusercontent.com/admknight/CloudstreamExtensions/builds/plugins.json"
