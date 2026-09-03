@@ -5,8 +5,10 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
+# contents: write -> commits status changes back into providers.json
+# issues:  write  -> opens an issue when a site becomes INACTIVE
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -17,64 +19,116 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check Internet Archive provider
-        shell: bash
+      - name: Check every registry site (ACTIVE / DEGRADED / INACTIVE)
+        id: probe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import json
+          import os
+          import subprocess
           import sys
-          import urllib.parse
-          import urllib.request
 
-          def get_json(url):
-              req = urllib.request.Request(
-                  url,
-                  headers={"User-Agent": "SalooRepo-HealthCheck/1.0"}
+          sys.path.insert(0, "scripts")
+          import site_registry as reg
+
+          data = reg.load_registry("providers.json")
+          problems = reg.validate_registry(data)
+          if problems:
+              raise SystemExit("registry invalid: %s" % "; ".join(problems))
+
+          def open_issue_exists(title):
+              result = subprocess.run(
+                  ["gh", "issue", "list", "--state", "open", "--json", "title"],
+                  capture_output=True, text=True, check=False,
               )
-              with urllib.request.urlopen(req, timeout=20) as response:
-                  if response.status < 200 or response.status >= 400:
-                      raise RuntimeError(f"HTTP {response.status}")
-                  return json.loads(response.read().decode("utf-8"))
+              try:
+                  titles = [item.get("title", "") for item in json.loads(result.stdout or "[]")]
+              except json.JSONDecodeError:
+                  titles = []
+              return title in titles
 
-          # 1. Internet Archive search API
-          search_params = urllib.parse.urlencode({
-              "q": "mediatype:movies",
-              "fl[]": "identifier",
-              "rows": "1",
-              "output": "json"
-          })
+          meaningful_changes = False
+          transitions = []
 
-          search_url = f"https://archive.org/advancedsearch.php?{search_params}"
-          search_data = get_json(search_url)
+          for provider in reg.providers(data):
+              site_id = provider.get("siteId")
+              if provider.get("enabled") is False:
+                  print(f"[SKIP]    {site_id}: manually disabled")
+                  continue
 
-          docs = search_data.get("response", {}).get("docs", [])
+              before = provider.get("status")
+              # canonical domain first, lastWorkingDomain as fallback (registry)
+              probe = reg.check_site(provider)
+              changed = reg.apply_check_result(provider, probe)
+              after = provider["status"]
 
-          if not docs:
-              raise RuntimeError("Search API returned no usable result.")
+              print(
+                  f"[{after.upper():<8}] {site_id}: url={provider.get('url')} "
+                  f"error={probe.get('error')}"
+              )
+              if changed:
+                  meaningful_changes = True
+              if before != after:
+                  transitions.append((site_id, before, after, probe.get("error")))
 
-          identifier = docs[0].get("identifier")
-
-          if not identifier:
-              raise RuntimeError("Search API returned no identifier.")
-
-          print(f"[OK] Search API returned identifier: {identifier}")
-
-          # 2. Metadata API
-          metadata_url = f"https://archive.org/metadata/{identifier}"
-          metadata = get_json(metadata_url)
-
-          metadata_block = metadata.get("metadata", {})
-
-          if not isinstance(metadata_block, dict):
-              raise RuntimeError("Metadata API returned an invalid metadata object.")
-
-          print(f"[OK] Metadata API responded for: {identifier}")
-
-          # 3. Minimal checks used by our provider
-          if "title" not in metadata_block and "title" not in metadata:
-              print("[WARN] Metadata response has no title field.")
+          if meaningful_changes:
+              problems = reg.validate_registry(data)
+              if problems:
+                  raise SystemExit("registry invalid after update: %s" % "; ".join(problems))
+              reg.save_registry("providers.json", data)
+              print("Registry updated.")
           else:
-              print("[OK] Metadata contains title information.")
+              print("No status changes; providers.json left untouched.")
 
-          print("Internet Archive provider health check PASSED.")
+          # INACTIVE never removes a site from the registry; it only flips the
+          # status so the site can return to ACTIVE on a later run.
+          for site_id, before, after, error in transitions:
+              if after == "inactive" and before != "inactive":
+                  title = f"Site INACTIVE: {site_id}"
+                  body = (
+                      f"Site `{site_id}` transitioned **{before} -> {after}**.\n\n"
+                      f"Last error: `{error}`\n\n"
+                      "The registry record is kept; the site returns to ACTIVE automatically "
+                      "when it becomes reachable again."
+                  )
+                  if open_issue_exists(title):
+                      print(f"[ISSUE]   open issue already exists: {title}")
+                  else:
+                      subprocess.run(
+                          ["gh", "issue", "create", "--title", title,
+                           "--body", body, "--label", "health-change"],
+                          check=False,
+                      )
+                      print(f"[ISSUE]   created: {title}")
+              elif after == "active" and before == "inactive":
+                  print(f"[RECOVER] {site_id}: back to ACTIVE (no issue opened)")
+
+          outputs_path = os.environ.get("GITHUB_OUTPUT")
+          if outputs_path:
+              with open(outputs_path, "a", encoding="utf-8") as handle:
+                  handle.write("changed=" + ("true" if meaningful_changes else "false") + "\n")
           PY
+
+      - name: Commit registry status changes
+        id: commit
+        run: |
+          if git diff --quiet providers.json; then
+            echo "No registry changes to commit."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "saloo-automation"
+            git config user.email "actions@users.noreply.github.com"
+            git add providers.json
+            git commit -m "chore(registry): health status update [skip ci]"
+            git pull --rebase origin main
+            git push
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger publish refresh (drop INACTIVE from plugins.json)
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run build.yml

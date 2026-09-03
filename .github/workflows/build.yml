@@ -31,6 +31,11 @@ jobs:
           chmod +x gradlew
           ./gradlew make makePluginsJson
 
+      - name: Filter plugins.json by registry status
+        run: |
+          python3 scripts/publish_list.py build/plugins.json providers.json \
+            --out build/plugins.json
+
       - name: Prepare builds branch
         run: |
           mkdir -p /tmp/saloo-builds

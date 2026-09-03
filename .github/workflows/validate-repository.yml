@@ -6,6 +6,8 @@ on:
     paths:
       - 'repo.json'
       - 'plugins.json'
+      - 'providers.json'
+      - 'scripts/**'
       - '**/*.kt'
       - '**/*.kts'
       - 'build.gradle.kts'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'repo.json'
       - 'plugins.json'
+      - 'providers.json'
+      - 'scripts/**'
       - '**/*.kt'
       - '**/*.kts'
       - 'build.gradle.kts'
@@ -31,16 +35,20 @@ permissions:
 
 jobs:
   validate-metadata:
-    name: Validate CloudStream metadata
+    name: Validate repository metadata
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate repository files
+      - name: Validate repo.json / plugins.json / providers.json
         run: |
           python3 - <<'PY'
           import json
+          import sys
           from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          import site_registry as reg
 
           repo = json.loads(Path('repo.json').read_text(encoding='utf-8'))
           required_repo = {'name', 'manifestVersion', 'pluginLists'}
@@ -64,12 +72,30 @@ jobs:
               if missing:
                   raise SystemExit(f'plugins[{index}] missing: {sorted(missing)}')
               if not isinstance(plugin['url'], str) or not plugin['url'].startswith('https://'):
-                  raise SystemExit(f'plugins[{index}].url must be an HTTPS URL')
+                  raise SystemExit(f"plugins[{index}].url must be an HTTPS URL")
               if plugin['internalName'] in names:
-                  raise SystemExit(f'duplicate internalName: {plugin["internalName"]}')
+                  raise SystemExit(f"duplicate internalName: {plugin['internalName']}")
               names.add(plugin['internalName'])
           print(f'Validated {len(plugins)} plugin entries.')
+
+          registry = json.loads(Path('providers.json').read_text(encoding='utf-8'))
+          problems = reg.validate_registry(registry)
+          if problems:
+              raise SystemExit('providers.json invalid: %s' % '; '.join(problems))
+          count = len(registry.get('providers', []))
+          print(f'Validated {count} site records (registry v{reg.REGISTRY_VERSION}).')
           PY
+
+      - name: Enforce publish policy (no INACTIVE entries in plugins.json)
+        run: |
+          if [ -f plugins.json ] && [ -s plugins.json ]; then
+            python3 scripts/publish_list.py plugins.json providers.json --check
+          else
+            echo "plugins.json absent/empty; publish policy trivially satisfied."
+          fi
+
+      - name: Run registry unit tests
+        run: python3 scripts/test_registry.py
 
   build-providers:
     name: Build providers

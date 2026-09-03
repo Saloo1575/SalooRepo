@@ -5,8 +5,9 @@ on:
     - cron: "47 3 * * *"
   workflow_dispatch:
 
+# contents: write -> commits CONFIRMED domain moves into providers.json
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -17,67 +18,132 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check provider domains
+      - name: Detect domain changes, update registry in place
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           import subprocess
-          import urllib.request
-          from urllib.parse import urlparse
+          import sys
 
-          with open("providers.json", encoding="utf-8") as f:
-              data = json.load(f)
+          sys.path.insert(0, "scripts")
+          import site_registry as reg
 
-          providers = data.get("providers", [])
+          data = reg.load_registry("providers.json")
+          problems = reg.validate_registry(data)
+          if problems:
+              raise SystemExit("registry invalid: %s" % "; ".join(problems))
 
-          for provider in providers:
-              if not provider.get("enabled", True):
-                  continue
-
-              name = provider.get("name", "Unknown")
-              url = provider.get("url")
-
-              if not url:
-                  continue
-
-              old_domain = urlparse(url).netloc
-
+          def open_issue_exists(title):
+              result = subprocess.run(
+                  ["gh", "issue", "list", "--state", "open", "--json", "title"],
+                  capture_output=True, text=True, check=False,
+              )
               try:
-                  req = urllib.request.Request(
-                      url,
-                      headers={"User-Agent": "SalooRepo-DomainCheck/1.0"}
+                  titles = [item.get("title", "") for item in json.loads(result.stdout or "[]")]
+              except json.JSONDecodeError:
+                  titles = []
+              return title in titles
+
+          def report_issue(title, body):
+              if open_issue_exists(title):
+                  print(f"[ISSUE]   open issue already exists: {title}")
+              else:
+                  subprocess.run(["gh", "issue", "create", "--title", title, "--body", body], check=False)
+                  print(f"[ISSUE]   created: {title}")
+
+          changed = False
+
+          for provider in reg.providers(data):
+              site_id = provider.get("siteId")
+              if provider.get("enabled") is False:
+                  print(f"[SKIP]    {site_id}: manually disabled")
+                  continue
+
+              old_url = provider.get("url")
+              old_dom = reg.normalize_domain(old_url)
+              try:
+                  final_url, status, body = reg.fetch(old_url)
+              except Exception as exc:
+                  print(f"[DOWN?]   {site_id}: {old_url} unreachable ({exc})")
+                  print("          status handling belongs to health-check; registry untouched")
+                  continue
+
+              new_dom = reg.normalize_domain(final_url)
+              old_rd = reg.registered_domain(old_dom)
+              new_rd = reg.registered_domain(new_dom)
+
+              if new_rd == old_rd:
+                  # same site: refresh host variant (www/m.) + bookkeeping only
+                  if old_dom != new_dom:
+                      reg.update_provider(data, site_id, url=reg.https_base(new_dom))
+                      changed = True
+                      print(f"[HOSTFIX] {site_id}: {old_dom} -> {new_dom}")
+                  if provider.get("lastWorkingDomain") != new_rd:
+                      reg.update_provider(data, site_id, lastWorkingDomain=new_rd)
+                      changed = True
+                  title = reg.extract_title(body)
+                  if title and not provider.get("titleSignature"):
+                      reg.update_provider(data, site_id, titleSignature=title)
+                      changed = True
+                      print(f"[SIGN]    {site_id}: title signature captured")
+                  print(f"[OK]      {site_id}: {old_rd}")
+                  continue
+
+              # domain really changed -> never create a duplicate provider
+              other, match_type = reg.find_provider_by_domain(data, new_dom)
+              if other is not None and other.get("siteId") != site_id:
+                  print(f"[AMBIG]   {site_id}: {new_dom} already belongs to {other['siteId']} ({match_type})")
+                  report_issue(
+                      f"Possible site overlap: {new_dom}",
+                      f"`{new_dom}` matched **{other['siteId']}** ({match_type}) while checking "
+                      f"**{site_id}**. No automatic merge was done - a human must decide.",
                   )
-
-                  with urllib.request.urlopen(req, timeout=20) as response:
-                      final_url = response.geturl()
-
-                  new_domain = urlparse(final_url).netloc
-
-                  if new_domain and new_domain != old_domain:
-                      title = f"Domain changed: {name}"
-                      body = (
-                          f"Provider: **{name}**\n\n"
-                          f"Configured URL: `{url}`\n\n"
-                          f"Detected final URL: `{final_url}`\n\n"
-                          f"Detected domain change: `{old_domain}` → `{new_domain}`"
-                      )
-
-                      subprocess.run(
-                          [
-                              "gh", "issue", "create",
-                              "--title", title,
-                              "--body", body,
-                              "--label", "domain-change"
-                          ],
-                          check=False
-                      )
-
-                      print(f"[DOMAIN-CHANGED] {name}: {old_domain} -> {new_domain}")
+              elif other is not None:
+                  # moved to a domain already known for THIS site (alias/lastWorking)
+                  reg.update_domain(data, site_id, new_dom, confirmed=True)
+                  changed = True
+                  print(f"[MOVED]   {site_id}: {old_dom} -> {new_dom} (known alias)")
+              else:
+                  signature = provider.get("titleSignature")
+                  page_title = reg.extract_title(body)
+                  if signature and reg.titles_match(signature, page_title):
+                      reg.update_domain(data, site_id, new_dom, confirmed=True)
+                      reg.update_provider(data, site_id, titleSignature=page_title)
+                      changed = True
+                      print(f"[MOVED]   {site_id}: {old_dom} -> {new_dom} (title signature confirmed)")
                   else:
-                      print(f"[OK] {name}: {old_domain}")
+                      print(f"[HUMAN]   {site_id}: {old_dom} -> {new_dom} (not confirmable, no auto-merge)")
+                      report_issue(
+                          f"Domain change needs confirmation: {site_id}",
+                          f"Provider: **{site_id}**\n\n"
+                          f"Configured URL: `{old_url}`\n\n"
+                          f"Detected final URL: `{final_url}`\n\n"
+                          f"`{old_dom}` -> `{new_dom}` could NOT be confirmed as the same site "
+                          "(no matching title signature). The registry was NOT updated and no "
+                          "duplicate provider was created. Confirm manually, then update "
+                          "providers.json in the SAME record (siteId stays the same).",
+                      )
 
-              except Exception as e:
-                  print(f"[CHECK-FAILED] {name}: {e}")
+          if changed:
+              problems = reg.validate_registry(data)
+              if problems:
+                  raise SystemExit("registry invalid after update: %s" % "; ".join(problems))
+              reg.save_registry("providers.json", data)
+              print("Registry updated.")
+          else:
+              print("No domain changes; providers.json left untouched.")
           PY
+
+      - name: Commit registry domain updates
+        run: |
+          if git diff --quiet providers.json; then
+            echo "No registry changes to commit."
+          else
+            git config user.name "saloo-automation"
+            git config user.email "actions@users.noreply.github.com"
+            git add providers.json
+            git commit -m "chore(registry): domain update [skip ci]"
+            git push
+          fi
