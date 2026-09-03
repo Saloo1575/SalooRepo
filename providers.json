@@ -1,11 +1,20 @@
 {
-  "version": 1,
+  "version": 2,
   "providers": [
     {
+      "siteId": "internet-archive",
       "name": "Internet Archive",
       "url": "https://archive.org",
+      "canonicalDomain": "archive.org",
+      "lastWorkingDomain": "archive.org",
+      "aliases": [],
+      "status": "active",
       "category": "official",
-      "enabled": true
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": null,
+      "lastChecked": null,
+      "lastError": null
     }
   ]
 }
