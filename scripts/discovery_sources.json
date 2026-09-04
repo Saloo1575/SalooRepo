@@ -1,35 +1,41 @@
 {
-  "_comment": "Curated candidate sources for discovery.yml. Public, legal, API-documented platforms only. Adding a source = a reviewed commit changing this file; discovery never adds sources at runtime. Pirated-content sites are never added.",
+  "_comment": "Curated candidate sources for discovery.yml. Public, legal, API-documented platforms only. Adding a source = a reviewed commit changing this file; discovery never adds sources at runtime. Pirated-content sites are never added. contentTypes must stay inside the SalooRepo allowlist (movie, series, anime, cartoon, documentary); discovery.yml rejects candidates that violate the content policy (step S6c).",
   "sources": [
     {
       "name": "Internet Archive",
       "url": "https://archive.org",
-      "reason": "Public media/archive API"
+      "reason": "Public media/archive API",
+      "contentTypes": ["movie", "documentary"]
     },
     {
       "name": "Wikimedia Commons",
       "url": "https://commons.wikimedia.org",
-      "reason": "Public media repository"
+      "reason": "Public media repository",
+      "contentTypes": ["documentary"]
     },
     {
       "name": "media.ccc.de",
       "url": "https://media.ccc.de",
-      "reason": "Public conference video platform"
+      "reason": "Public conference video platform",
+      "contentTypes": ["documentary"]
     },
     {
       "name": "Framatube (PeerTube)",
       "url": "https://framatube.org",
-      "reason": "Open-source PeerTube instance with a public API"
+      "reason": "Open-source PeerTube instance with a public API",
+      "contentTypes": ["documentary"]
     },
     {
       "name": "NASA Image and Video Library",
       "url": "https://images.nasa.gov",
-      "reason": "Public-domain media API"
+      "reason": "Public-domain media API",
+      "contentTypes": ["documentary"]
     },
     {
       "name": "Blender Studio",
       "url": "https://studio.blender.org",
-      "reason": "CC-licensed open movies"
+      "reason": "CC-licensed open movies",
+      "contentTypes": ["movie", "documentary"]
     }
   ]
 }

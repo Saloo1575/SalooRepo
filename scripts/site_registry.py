@@ -22,6 +22,7 @@ Registry schema (version 2)::
           "aliases": [],                       # previous / alternate domains
           "status": "active",                  # active | degraded | inactive
           "category": "official",              # official | community | other
+          "contentTypes": ["movie"],           # movie|series|anime|cartoon|documentary
           "enabled": true,                     # manual on/off switch
           "probePath": "/",                    # functional probe path
           "titleSignature": null,              # <title> baseline for same-site checks
@@ -48,6 +49,62 @@ from urllib.parse import urlparse
 REGISTRY_VERSION = 2
 STATUSES = ("active", "degraded", "inactive")
 USER_AGENT = "SalooRepo-Registry/2.0"
+
+# ---------------------------------------------------------------------------
+# content-type policy: what SalooRepo is willing to track and publish
+# ---------------------------------------------------------------------------
+# Allowlist -- the ONLY content types a provider/site may serve. Live TV /
+# IPTV, cameras, radio, adult content, sports and betting are rejected
+# outright; anything that does not normalize into this tuple is rejected too.
+ALLOWED_CONTENT_TYPES = ("movie", "series", "anime", "cartoon", "documentary")
+
+# Common synonyms -> canonical allowlist label (checked case-insensitively;
+# most specific alias first for the substring fallback).
+CONTENT_TYPE_ALIASES = {
+    "tv series": "series",
+    "documentaries": "documentary",
+    "cizgi film": "cartoon",
+    "çizgi film": "cartoon",
+    "belgesel": "documentary",
+    "documentary": "documentary",
+    "cartoon": "cartoon",
+    "anime": "anime",
+    "series": "series",
+    "movies": "movie",
+    "film": "movie",
+    "movie": "movie",
+    "dizi": "series",
+}
+
+# Hard-deny keywords (substring match, case-insensitive) applied to a
+# candidate's name / url / page title: live TV, IPTV, cameras, radio,
+# 18+ content, sports and betting are never tracked and never published.
+# Intentionally conservative: a false positive only moves a decision to a
+# human (issue), a false negative would publish unwanted content.
+DENY_CONTENT_KEYWORDS = (
+    "iptv",
+    "canlı tv", "canli tv", "canlitv",
+    "live tv", "livetv", "livestream", "live stream",
+    "webcam", "kamera", "camera",
+    "radyo", "radio",
+    "18+", "+18", "nsfw", "porn", "xxx", "erotik", "yetişkin", "yetiskin",
+    "spor", "sports", "maç", "canli mac", "canlı maç",
+    "bahis", "betting", "iddaa",
+)
+
+_DENY_CONTENT_RE = re.compile(
+    "|".join(re.escape(keyword) for keyword in DENY_CONTENT_KEYWORDS),
+    re.IGNORECASE,
+)
+
+# CloudStream TvType names used by the scaffolder (discovery.yml S9).
+CLOUDSTREAM_TV_TYPES = {
+    "movie": "Movie",
+    "series": "TvSeries",
+    "anime": "Anime",
+    "cartoon": "Cartoon",
+    "documentary": "Documentaries",
+}
 
 # Common multi-part public suffixes for the registered-domain heuristic.
 _MULTI_PART_SUFFIXES = {
@@ -126,6 +183,95 @@ def titles_match(a, b):
     """Loose <title> comparison used for same-site confirmation."""
     left, right = title_key(a), title_key(b)
     return bool(left) and left == right
+
+
+# --------------------------------------------------------------------------
+# content-type policy helpers
+# --------------------------------------------------------------------------
+
+def normalize_content_type(value):
+    """Map a raw label ("Film", "TV Series", "Belgesel") to an allowlist type.
+
+    Returns the canonical allowlist label, or None when the value is empty
+    or does not belong to the allowlist (unknown = rejected by policy).
+    """
+    text = re.sub(r"[^a-zçğıöşü0-9]+", " ", str(value or "").lower()).strip()
+    if not text:
+        return None
+    if text in CONTENT_TYPE_ALIASES:
+        return CONTENT_TYPE_ALIASES[text]
+    for alias, canonical in CONTENT_TYPE_ALIASES.items():
+        if alias in text:
+            return canonical
+    return None
+
+
+def record_content_types(provider, default=ALLOWED_CONTENT_TYPES):
+    """Normalized allowlist types declared on a record.
+
+    Records without an explicit ``contentTypes`` field (or with an empty
+    list) are treated as potentially serving the whole allowlist: the policy
+    only REJECTS records that explicitly declare a non-allowlisted type or
+    hit a deny keyword. This keeps older registries (and the offline test
+    fixtures) valid; discovery-created records always declare explicit types.
+    """
+    raw = provider.get("contentTypes")
+    if raw is None or raw == []:
+        return tuple(default)
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    types = []
+    for value in raw:
+        item = normalize_content_type(value)
+        if item and item not in types:
+            types.append(item)
+    return tuple(types)
+
+
+def content_policy_violation(provider):
+    """Content-policy check for a registry record or a discovery candidate.
+
+    Returns a human-readable rejection reason, or None when the record
+    satisfies the policy. Two layers:
+
+      1. deny keywords (name / url / title / titleSignature): live TV, IPTV,
+         cameras, radio, 18+ content, sports and betting;
+      2. a ``contentTypes`` declaration containing a value that does not
+         normalize into ALLOWED_CONTENT_TYPES.
+    """
+    for key in ("name", "url", "title", "titleSignature"):
+        value = provider.get(key)
+        if value and _DENY_CONTENT_RE.search(str(value)):
+            return f"deny keyword in {key}: '{value}'"
+    raw = provider.get("contentTypes")
+    if raw is None or raw == []:
+        return None  # untyped record: permissive default (backwards compatible)
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return f"contentTypes must be a list, got: {raw!r}"
+    normalized = [normalize_content_type(value) for value in raw]
+    if any(item is None for item in normalized):
+        return f"contentTypes outside policy: {raw!r}"
+    return None
+
+
+def tv_types_for(content_types):
+    """Map normalized policy types to CloudStream TvType names.
+
+    Unknown items are skipped; None/empty input falls back to the whole
+    allowlist (same permissive default as record_content_types). The result
+    keeps allowlist order so scaffolded modules are deterministic.
+    """
+    items = content_types or ALLOWED_CONTENT_TYPES
+    result = []
+    for item in items:
+        name = CLOUDSTREAM_TV_TYPES.get(item)
+        if name and name not in result:
+            result.append(name)
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -282,6 +428,9 @@ def validate_registry(data):
         status = provider.get("status")
         if status not in STATUSES:
             problems.append(f"{where}.status invalid: {status!r}")
+        violation = content_policy_violation(provider)
+        if violation:
+            problems.append(f"{where}: content policy violation ({violation})")
         url = provider.get("url") or ""
         if not url.startswith("https://"):
             problems.append(f"{where}.url must start with https:// ({url!r})")

@@ -62,6 +62,9 @@ süzerek yayınlar:
 5. Ayna grupları (`titleSignature` aynı) arasında yalnızca en sağlıklı /
    en güncel sınanmış kayıt yayınlanır (active > degraded, sonra en yeni
    `lastChecked`).
+6. İçerik-tipi politikası: `contentTypes` içinde allowlist dışı tür bildiren
+   (veya adı/url'ü/başlığı yasaklı kelime içeren) kayıtlar yayından düşürülür
+   ve ayna grubu kazanamaz (aşağıda "İçerik-tipi politikası" bölümü).
 
 `health-check` durum değişikliğini commit'lediğinde `build.yml`'i
 tetikler; böylece INACTIVE'e düşen site birkaç dakika içinde listeden
@@ -75,7 +78,9 @@ aynı politikayı `--check` ile zorlar.
   (keşif kendi kendine kaynak eklemez).
 - Adım zinciri: S1 aday → S2 domain normalize → S3/S4 duplicate
   (canonical/lastWorking/alias) → S5 domain-change sahipliği → S6 aktiflik
-  probu → S6b ayna (title) kontrolü → S7 karar.
+  probu → S6b ayna (title) kontrolü → S6c içerik politikası → S7 karar.
+  Kaynağın `contentTypes` bildirimi S8 registry kaydına ve scaffold
+  tvTypes'ına taşınır; reddedilen adaylar Issue'da ayrı bölümde listelenir.
 - `AUTO_ADD_NEW_SITES=false` iken çıktı yalnızca Issue raporudur; probe
   durumu, final domain ve ayna bilgisi rapora eklenir.
 - `AUTO_ADD_NEW_SITES=true` yapıldığında: registry güncellemesi + scaffold
@@ -108,3 +113,38 @@ aynı politikayı `--check` ile zorlar.
 - Gradle tarafı düşük RAM'e göre ayarlıdır (`gradle.properties`:
   `-Xmx768m`, daemon ve parallel kapalı). Lokal derleme:
   `gradlew --no-daemon make makePluginsJson`.
+
+## 7. İçerik-tipi politikası (v2.1)
+
+SalooRepo YALNIZCA şu içerik türlerini kabul eder (allowlist):
+
+| Tür | Anlam | CloudStream TvType |
+|---|---|---|
+| `movie` | Film | `Movie` |
+| `series` | Dizi | `TvSeries` |
+| `anime` | Anime | `Anime` |
+| `cartoon` | Çizgi film | `Cartoon` |
+| `documentary` | Belgesel | `Documentaries` |
+
+Red listesi (otomatik): canlı TV/IPTV/online TV, kamera/webcam, radyo,
+18+/NSFW/porn, spor/maç, bahis ve allowlist dışı tanımlanamayan her şey.
+
+- **Registry:** kayıtlar `contentTypes` alanıyla tür bildirir
+  (`providers.json`). Alan yoksa kayıt "eski/tipsiz" sayılır ve yayında
+  permissive varsayılanla değerlendirilir; AMA alan varsa içinde allowlist
+  dışı değer bulunamaz (`validate_registry` CI'da hata verir).
+- **Deny kelimeleri:** aday/kayıt adı, url, sayfa başlığı ve
+  `titleSignature` içinde yasaklı kelime (iptv, canlı tv, kamera, radyo,
+  18+, spor, bahis, ...) varsa kayıt/aday reddedilir. Eşleşme bilinçli
+  olarak ihtiyatlıdır (substring): yanlış pozitif kararı insana devreder,
+  yanlış negatif istenmeyen içerik yayınlatır.
+- **Discovery:** S6c adımı adayları politika açısından denetler; reddedilen
+  adaylar Issue'da "İçerik politikası gereği reddedilen adaylar" bölümünde
+  raporlanır, asla kayıt açılmaz.
+- **Publish:** `publish_list.py` Kural 6 — politika ihlali yapan mapped
+  kayıt listeden düşer ve ayna grubu kazanamaz.
+- **Scaffold:** üretilen modülün `supportedTypes` ve `tvTypes` alanları
+  kaydın `contentTypes` değerinden `reg.tv_types_for()` ile üretilir
+  (tipsiz kayıt → tüm allowlist).
+- Yardımcılar: `normalize_content_type()`, `record_content_types()`,
+  `content_policy_violation()`, `tv_types_for()` (testler: TEST 13–16).

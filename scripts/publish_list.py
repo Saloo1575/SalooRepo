@@ -19,6 +19,9 @@ SalooRepo v2 publish policy (see docs/automation.md):
   5. When several eligible records would publish plugins that share one
      titleSignature (mirror sites), only the healthiest / most recently
      checked record publishes: active > degraded, then newest lastChecked.
+  6. Content-type policy: records whose contentTypes declaration (or name /
+     url / page title) violates the SalooRepo allowlist (movie, series,
+     anime, cartoon, documentary) are never published (see site_registry).
 
 CLI:
   python3 scripts/publish_list.py build/plugins.json providers.json \
@@ -94,7 +97,13 @@ def filter_plugins(entries, registry, publish_statuses=DEFAULT_STATUSES):
                 f"{site_id}: status {record.get('status')!r} publish listesi disinda"
             )
         else:
-            eligible[site_id] = record
+            violation = reg.content_policy_violation(record)
+            if violation:
+                # content-type policy: never publish (and never let such a
+                # record win a mirror group, since it is not eligible)
+                blocked[index] = f"{site_id}: icerik-tipi politikasi ({violation})"
+            else:
+                eligible[site_id] = record
 
     # mirror dedupe: records sharing one titleSignature publish only once
     mirror_winner = {}

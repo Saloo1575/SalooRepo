@@ -449,6 +449,70 @@ def test_12_status_transitions_full_cycle():
     assert kept == [], "INACTIVE site leaked into the publish list"
 
 
+def test_13_publish_content_type_policy():
+    data = base_registry()
+    provider = data["providers"][0]
+    # explicitly declared non-allowlisted type -> dropped from the publish list
+    provider["contentTypes"] = ["live"]
+    kept, decisions = pub.filter_plugins(
+        [{"internalName": "SiteA", "name": "Site A"}], data)
+    assert kept == [], "non-allowlisted contentType leaked into the publish list"
+    assert any(action == "drop" for _, _, action, _ in decisions), decisions
+    # allowlisted declaration -> kept
+    provider["contentTypes"] = ["movie", "anime"]
+    kept, _ = pub.filter_plugins(
+        [{"internalName": "SiteA", "name": "Site A"}], data)
+    assert len(kept) == 1, "allowlisted contentTypes were wrongly dropped"
+    # legacy untyped record -> kept (permissive default, backwards compatible)
+    del provider["contentTypes"]
+    kept, _ = pub.filter_plugins(
+        [{"internalName": "SiteA", "name": "Site A"}], data)
+    assert len(kept) == 1, "legacy untyped record was wrongly dropped"
+
+
+def test_14_validate_content_type_schema():
+    data = base_registry()
+    provider = data["providers"][0]
+    provider["contentTypes"] = ["movie"]
+    assert reg.validate_registry(data) == [], "allowlisted types failed validation"
+    del provider["contentTypes"]
+    assert reg.validate_registry(data) == [], "missing contentTypes must stay valid"
+    provider["contentTypes"] = ["nsfw"]
+    problems = reg.validate_registry(data)
+    assert problems, "non-allowlisted type passed validation"
+    provider["contentTypes"] = ["iptv"]
+    assert reg.content_policy_violation(provider), "iptv declaration not rejected"
+
+
+def test_15_deny_keywords_reject_candidates():
+    rejected = [
+        {"name": "CanliTV HD", "url": "https://canlitv.example", "title": "Canlı TV"},
+        {"name": "Movie Site", "url": "https://iptv.example", "title": "Movies"},
+        {"name": "Radio App", "url": "https://films.example", "title": "Film"},
+        {"name": "FilmX", "url": "https://filmx.example", "title": "18+ film izle"},
+        {"name": "SporMax", "url": "https://spormax.example", "title": "Maç yayını"},
+        {"name": "Kameracanli", "url": "https://film.example", "title": "webcam"},
+        {"name": "BahisForumu", "url": "https://filmler.example", "title": "bahis"},
+    ]
+    for candidate in rejected:
+        assert reg.content_policy_violation(candidate), candidate
+    clean = {"name": "Film Sitesi", "url": "https://films.example", "title": "Film izle"}
+    assert reg.content_policy_violation(clean) is None, clean
+    typed = dict(clean, contentTypes=["cartoon", "documentary"])
+    assert reg.content_policy_violation(typed) is None, typed
+    bad_typed = dict(clean, contentTypes=["reality"])
+    assert reg.content_policy_violation(bad_typed), "reality must be rejected"
+
+
+def test_16_tv_type_mapping():
+    assert reg.tv_types_for(["movie", "anime"]) == ["Movie", "Anime"]
+    assert reg.tv_types_for(["documentary"]) == ["Documentaries"]
+    assert reg.tv_types_for(["cartoon", "series"]) == ["Cartoon", "TvSeries"]
+    assert reg.tv_types_for(None) == [
+        "Movie", "TvSeries", "Anime", "Cartoon", "Documentaries"]
+    assert reg.tv_types_for(["unknown"]) == []
+
+
 def main():
     print("SalooRepo site-registry tests")
     print("=" * 64)
@@ -482,6 +546,14 @@ def main():
              test_11_publish_filter_file_roundtrip)
     run_test("TEST 12", "ACTIVE->DEGRADED->INACTIVE->ACTIVE dongusu + listede yok",
              test_12_status_transitions_full_cycle)
+    run_test("TEST 13", "Icerik-tipi politikasi: reddedilen tur listede yok, allowlist gecer",
+             test_13_publish_content_type_policy)
+    run_test("TEST 14", "Icerik-tipi sema: allowlist disi tur validate ile yakalanir",
+             test_14_validate_content_type_schema)
+    run_test("TEST 15", "Deny keywords: IPTV/kamera/radyo/18+/spor/bahis reddedilir",
+             test_15_deny_keywords_reject_candidates)
+    run_test("TEST 16", "TvType eslemesi: 5 allowlist turu CloudStream'e dogru eslenir",
+             test_16_tv_type_mapping)
     failed = [label for label, ok in RESULTS if not ok]
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} tests passed")

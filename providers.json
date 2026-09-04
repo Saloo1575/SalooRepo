@@ -10,6 +10,7 @@
       "aliases": [],
       "status": "active",
       "category": "official",
+      "contentTypes": ["movie"],
       "enabled": true,
       "probePath": "/",
       "titleSignature": null,

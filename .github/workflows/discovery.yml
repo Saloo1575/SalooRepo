@@ -54,19 +54,27 @@ jobs:
           # content sites are never added. The built-in list below is the
           # fallback when the file is missing or unreadable.
           candidate_sources = [
-              {"name": "Internet Archive", "url": "https://archive.org", "reason": "Public media/archive API"},
-              {"name": "Wikimedia Commons", "url": "https://commons.wikimedia.org", "reason": "Public media repository"},
-              {"name": "media.ccc.de", "url": "https://media.ccc.de", "reason": "Public conference video platform"},
+              {"name": "Internet Archive", "url": "https://archive.org", "reason": "Public media/archive API", "contentTypes": ["movie", "documentary"]},
+              {"name": "Wikimedia Commons", "url": "https://commons.wikimedia.org", "reason": "Public media repository", "contentTypes": ["documentary"]},
+              {"name": "media.ccc.de", "url": "https://media.ccc.de", "reason": "Public conference video platform", "contentTypes": ["documentary"]},
           ]
           sources_file = pathlib.Path("scripts/discovery_sources.json")
           if sources_file.exists():
               try:
                   loaded = json.loads(sources_file.read_text(encoding="utf-8"))
-                  loaded_sources = [
-                      {"name": s["name"], "url": s["url"], "reason": s.get("reason", "")}
-                      for s in loaded.get("sources", [])
-                      if isinstance(s, dict) and s.get("name") and s.get("url")
-                  ]
+                  loaded_sources = []
+                  for s in loaded.get("sources", []):
+                      if not (isinstance(s, dict) and s.get("name") and s.get("url")):
+                          continue
+                      declared = [
+                          reg.normalize_content_type(value)
+                          for value in (s.get("contentTypes") or [])
+                      ]
+                      loaded_sources.append({
+                          "name": s["name"], "url": s["url"],
+                          "reason": s.get("reason", ""),
+                          "contentTypes": [t for t in declared if t],
+                      })
                   if loaded_sources:
                       candidate_sources = loaded_sources
                       print(f"[SOURCES] {len(candidate_sources)} curated sources from discovery_sources.json")
@@ -75,8 +83,10 @@ jobs:
 
           report = []
           new_candidates = []
+          policy_rejections = []
 
           for candidate in candidate_sources:
+              candidate["contentTypes"] = candidate.get("contentTypes") or []
               # ---------------------------------------------- S2: DOMAIN NORMALIZE
               domain = reg.normalize_domain(candidate["url"])
               registered = reg.registered_domain(domain)
@@ -121,6 +131,23 @@ jobs:
                       print(f"[ALIAS]   {candidate['domain']} -> {owner['siteId']} aliases")
                   continue
 
+              # ------------------------------------ S6c: CONTENT POLICY CHECK
+              # Only movie / series / anime / cartoon / documentary pass.
+              # Live TV/IPTV, cameras, radio, adult content, sports, betting
+              # and anything outside the allowlist is rejected outright.
+              policy_reason = reg.content_policy_violation({
+                  "name": candidate["name"],
+                  "url": candidate["url"],
+                  "title": probe.get("title"),
+                  "contentTypes": candidate.get("contentTypes") or [],
+              })
+              if policy_reason:
+                  candidate["rejectedBy"] = policy_reason
+                  policy_rejections.append(candidate)
+                  report.append((candidate, "REJECTED",
+                                 f"content policy: {policy_reason}"))
+                  continue
+
               # ------------------------------------------------------- S7: DECISION
               new_candidates.append(candidate)
               report.append((candidate, "NEW", "not tracked yet"))
@@ -161,6 +188,13 @@ jobs:
               code = code.replace("class ExampleProvider", f"class {class_name}Provider")
               code = code.replace("https://example.com/", entry["url"])
               code = code.replace('override var name = "Example provider"', f'override var name = "{entry["name"]}"')
+              # content-type policy: supportedTypes comes from the record's
+              # contentTypes via the registry library (5 allowlisted CloudStream
+              # TvTypes; untyped placeholders stay policy-compliant)
+              supported = ", ".join(
+                  f"TvType.{name}" for name in reg.tv_types_for(entry.get("contentTypes"))
+              ) or "TvType.Movie"
+              code = code.replace("setOf(TvType.Movie)", f"setOf({supported})")
               (dst / f"{class_name}Provider.kt").write_text(code, encoding="utf-8")
               plugin = (
                   f"package com.saloo.sites.{package}\n\n"
@@ -178,6 +212,9 @@ jobs:
               (module_dir / "src" / "main" / "AndroidManifest.xml").write_text(
                   '<?xml version="1.0" encoding="utf-8"?>\n<manifest />', encoding="utf-8"
               )
+              tv_types_literal = ", ".join(
+                  f'"{name}"' for name in reg.tv_types_for(entry.get("contentTypes"))
+              ) or '"Movie"'
               gradle = (
                   "version = 1\n\n"
                   "cloudstream {\n"
@@ -185,7 +222,7 @@ jobs:
                   '    language = "tr"\n'
                   f'    description = "Auto-scaffolded provider module for {entry["name"]}"\n'
                   "    status = 1\n"
-                  '    tvTypes = listOf("Movie", "TvSeries")\n'
+                  f"    tvTypes = listOf({tv_types_literal})\n"
                   "}\n"
               )
               (module_dir / "build.gradle.kts").write_text(gradle, encoding="utf-8")
@@ -205,6 +242,19 @@ jobs:
                   body_lines.append(f"- Final domain: `{candidate.get('finalDomain') or 'n/a'}`")
                   if candidate.get("mirrorOf"):
                       body_lines.append(f"- MIRROR of: `{candidate['mirrorOf']}`")
+                  if candidate.get("contentTypes"):
+                      body_lines.append(
+                          f"- Declared types: {', '.join(candidate['contentTypes'])}"
+                      )
+                  body_lines.append("")
+              if policy_rejections:
+                  body_lines.append("## İçerik politikası gereği reddedilen adaylar")
+                  body_lines.append("")
+                  for candidate in policy_rejections:
+                      body_lines.append(
+                          f"- {candidate['name']} (`{candidate['url']}`): "
+                          f"{candidate.get('rejectedBy')}"
+                      )
                   body_lines.append("")
               body_lines.append(
                   "Candidates only. Nothing was added automatically "
@@ -228,8 +278,16 @@ jobs:
           added_modules = []
           for candidate in new_candidates:
               # ------------------------------------------- S8: REGISTRY UPDATE (gated)
+              extra = (
+                  {"contentTypes": candidate["contentTypes"]}
+                  if candidate.get("contentTypes")
+                  else None
+              )
               try:
-                  entry = reg.add_provider(data, candidate["name"], candidate["url"], category="official")
+                  entry = reg.add_provider(
+                      data, candidate["name"], candidate["url"],
+                      category="official", extra=extra,
+                  )
               except reg.DuplicateSiteError as exc:
                   # A concurrent run won the race; never crash, never double-add.
                   report.append((candidate, "EXISTING", str(exc)))
