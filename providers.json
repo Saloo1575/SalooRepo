@@ -10,11 +10,13 @@
       "aliases": [],
       "status": "active",
       "category": "official",
-      "contentTypes": ["movie"],
+      "contentTypes": [
+        "movie"
+      ],
       "enabled": true,
       "probePath": "/",
-      "titleSignature": null,
-      "lastChecked": null,
+      "titleSignature": "Internet Archive: Digital Library of Free &amp; Borrowable Texts, Movies, Music &amp; Wayback Machine",
+      "lastChecked": "2026-09-05T07:51:40Z",
       "lastError": null
     }
   ]
