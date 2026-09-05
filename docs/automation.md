@@ -62,9 +62,9 @@ süzerek yayınlar:
 5. Ayna grupları (`titleSignature` aynı) arasında yalnızca en sağlıklı /
    en güncel sınanmış kayıt yayınlanır (active > degraded, sonra en yeni
    `lastChecked`).
-6. İçerik-tipi politikası: `contentTypes` içinde allowlist dışı tür bildiren
-   (veya adı/url'ü/başlığı yasaklı kelime içeren) kayıtlar yayından düşürülür
-   ve ayna grubu kazanamaz (aşağıda "İçerik-tipi politikası" bölümü).
+6. İçerik-tipi politikası: bildiriminde hiçbir izinli tür bulunmayan kayıtlar
+   yayından düşürülür ve ayna grubu kazanamaz (aşağıda "İçerik-tipi
+   politikası" bölümü).
 
 `health-check` durum değişikliğini commit'lediğinde `build.yml`'i
 tetikler; böylece INACTIVE'e düşen site birkaç dakika içinde listeden
@@ -114,9 +114,10 @@ aynı politikayı `--check` ile zorlar.
   `-Xmx768m`, daemon ve parallel kapalı). Lokal derleme:
   `gradlew --no-daemon make makePluginsJson`.
 
-## 7. İçerik-tipi politikası (v2.1)
+## 7. İçerik-tipi politikası (v2.2)
 
-SalooRepo YALNIZCA şu içerik türlerini kabul eder (allowlist):
+Karar kuralı: site, şu izinli türlerden **EN AZ BİRİNİ** barındırıyorsa
+kabul edilir:
 
 | Tür | Anlam | CloudStream TvType |
 |---|---|---|
@@ -124,27 +125,30 @@ SalooRepo YALNIZCA şu içerik türlerini kabul eder (allowlist):
 | `series` | Dizi | `TvSeries` |
 | `anime` | Anime | `Anime` |
 | `cartoon` | Çizgi film | `Cartoon` |
-| `documentary` | Belgesel | `Documentaries` |
+| `documentary` | Belgesel | `Documentary` |
 
-Red listesi (otomatik): canlı TV/IPTV/online TV, kamera/webcam, radyo,
-18+/NSFW/porn, spor/maç, bahis ve allowlist dışı tanımlanamayan her şey.
+Red yalnızca şunlar için geçerlidir: bildirimde hiçbir izinli tür yoksa
+(yalnızca canlı TV/IPTV, kamera/webcam, radyo, 18+/NSFW, spor/maç, bahis
+veya bilinmeyen türler bildirilmişse).
 
+- **Karışık içerik KABUL:** "Film + Dizi + Canlı TV", "Film + 18+" gibi
+  kombinasyonlar reddedilmez; yalnızca izinli türün VARLIĞI bakılır.
 - **Registry:** kayıtlar `contentTypes` alanıyla tür bildirir
-  (`providers.json`). Alan yoksa kayıt "eski/tipsiz" sayılır ve yayında
-  permissive varsayılanla değerlendirilir; AMA alan varsa içinde allowlist
-  dışı değer bulunamaz (`validate_registry` CI'da hata verir).
-- **Deny kelimeleri:** aday/kayıt adı, url, sayfa başlığı ve
-  `titleSignature` içinde yasaklı kelime (iptv, canlı tv, kamera, radyo,
-  18+, spor, bahis, ...) varsa kayıt/aday reddedilir. Eşleşme bilinçli
-  olarak ihtiyatlıdır (substring): yanlış pozitif kararı insana devreder,
-  yanlış negatif istenmeyen içerik yayınlatır.
-- **Discovery:** S6c adımı adayları politika açısından denetler; reddedilen
+  (`providers.json`). Alan yoksa kayıt "eski/tipsiz" sayılır ve permissive
+  varsayılanla değerlendirilir (geriye dönük uyumluluk). Alan varsa içinde
+  en az bir izinli tür yoksa `validate_registry` CI'da hata verir.
+- **Deny kelimeleri (yalnızca bilgi):** adı/url'ü/başlığında yasaklı kategori
+  geçen siteler ARTIK reddedilmez; `denied_content_flags()` bu kategorileri
+  raporlamak içindir (discovery Issue'sunda bilgi satırı olarak görünür).
+- **Discovery:** S6c adımı "≥1 izinli tür" kuralını denetler; reddedilen
   adaylar Issue'da "İçerik politikası gereği reddedilen adaylar" bölümünde
   raporlanır, asla kayıt açılmaz.
-- **Publish:** `publish_list.py` Kural 6 — politika ihlali yapan mapped
-  kayıt listeden düşer ve ayna grubu kazanamaz.
+- **Publish:** `publish_list.py` Kural 6 — izinli türü olmayan mapped kayıt
+  listeden düşer ve ayna grubu kazanamaz.
 - **Scaffold:** üretilen modülün `supportedTypes` ve `tvTypes` alanları
   kaydın `contentTypes` değerinden `reg.tv_types_for()` ile üretilir
-  (tipsiz kayıt → tüm allowlist).
+  (tipsiz kayıt → tüm allowlist; `Documentary` enum değeri CloudStream
+  master kaynaklarından doğrulanmıştır).
 - Yardımcılar: `normalize_content_type()`, `record_content_types()`,
-  `content_policy_violation()`, `tv_types_for()` (testler: TEST 13–16).
+  `content_policy_violation()`, `denied_content_flags()`, `tv_types_for()`
+  (testler: TEST 13–16).

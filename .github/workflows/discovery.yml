@@ -132,21 +132,28 @@ jobs:
                   continue
 
               # ------------------------------------ S6c: CONTENT POLICY CHECK
-              # Only movie / series / anime / cartoon / documentary pass.
-              # Live TV/IPTV, cameras, radio, adult content, sports, betting
-              # and anything outside the allowlist is rejected outright.
-              policy_reason = reg.content_policy_violation({
+              # A candidate passes when it declares at least one allowed
+              # content type (movie / series / anime / cartoon /
+              # documentary). Denied categories (live TV/IPTV, cameras,
+              # radio, adult content, sports, betting) never reject a
+              # candidate on their own; they are only reported as
+              # informational flags on the issue.
+              policy_candidate = {
                   "name": candidate["name"],
                   "url": candidate["url"],
                   "title": probe.get("title"),
                   "contentTypes": candidate.get("contentTypes") or [],
-              })
+              }
+              policy_reason = reg.content_policy_violation(policy_candidate)
               if policy_reason:
                   candidate["rejectedBy"] = policy_reason
                   policy_rejections.append(candidate)
                   report.append((candidate, "REJECTED",
                                  f"content policy: {policy_reason}"))
                   continue
+              content_flags = reg.denied_content_flags(policy_candidate)
+              if content_flags:
+                  candidate["contentFlags"] = content_flags
 
               # ------------------------------------------------------- S7: DECISION
               new_candidates.append(candidate)
@@ -245,6 +252,11 @@ jobs:
                   if candidate.get("contentTypes"):
                       body_lines.append(
                           f"- Declared types: {', '.join(candidate['contentTypes'])}"
+                      )
+                  if candidate.get("contentFlags"):
+                      body_lines.append(
+                          "- Noted (policy-neutral) categories: "
+                          + "; ".join(candidate["contentFlags"])
                       )
                   body_lines.append("")
               if policy_rejections:

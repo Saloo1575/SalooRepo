@@ -22,7 +22,7 @@ Registry schema (version 2)::
           "aliases": [],                       # previous / alternate domains
           "status": "active",                  # active | degraded | inactive
           "category": "official",              # official | community | other
-          "contentTypes": ["movie"],           # movie|series|anime|cartoon|documentary
+          "contentTypes": ["movie"],           # >=1 allowed type; deny categories may coexist
           "enabled": true,                     # manual on/off switch
           "probePath": "/",                    # functional probe path
           "titleSignature": null,              # <title> baseline for same-site checks
@@ -53,13 +53,20 @@ USER_AGENT = "SalooRepo-Registry/2.0"
 # ---------------------------------------------------------------------------
 # content-type policy: what SalooRepo is willing to track and publish
 # ---------------------------------------------------------------------------
-# Allowlist -- the ONLY content types a provider/site may serve. Live TV /
-# IPTV, cameras, radio, adult content, sports and betting are rejected
-# outright; anything that does not normalize into this tuple is rejected too.
+# Allowlist -- the content types a provider/site may serve. A site is
+# acceptable when it declares at least ONE of these types; anything that
+# does not normalize into this tuple contributes no allowed type (the
+# acceptance rule lives in content_policy_violation).
 ALLOWED_CONTENT_TYPES = ("movie", "series", "anime", "cartoon", "documentary")
 
-# Common synonyms -> canonical allowlist label (checked case-insensitively;
-# most specific alias first for the substring fallback).
+# Denied content categories: recognized but NOT allowed on their own. Their
+# presence on a site is informational only and never rejects it; a site is
+# rejected only when it declares NO allowed content type at all.
+DENIED_CONTENT_TYPES = ("live_tv", "camera", "radio", "nsfw", "sports", "betting")
+
+# Common synonyms -> canonical policy label (an allowed type or a denied
+# category), checked case-insensitively; most specific alias first for the
+# substring fallback.
 CONTENT_TYPE_ALIASES = {
     "tv series": "series",
     "documentaries": "documentary",
@@ -74,13 +81,38 @@ CONTENT_TYPE_ALIASES = {
     "film": "movie",
     "movie": "movie",
     "dizi": "series",
+    "iptv": "live_tv",
+    "canlı tv": "live_tv",
+    "canli tv": "live_tv",
+    "canlitv": "live_tv",
+    "live tv": "live_tv",
+    "livetv": "live_tv",
+    "livestream": "live_tv",
+    "live stream": "live_tv",
+    "webcam": "camera",
+    "kamera": "camera",
+    "camera": "camera",
+    "radyo": "radio",
+    "radio": "radio",
+    "18+": "nsfw",
+    "+18": "nsfw",
+    "nsfw": "nsfw",
+    "porn": "nsfw",
+    "erotik": "nsfw",
+    "yetişkin": "nsfw",
+    "yetiskin": "nsfw",
+    "spor": "sports",
+    "sports": "sports",
+    "maç": "sports",
+    "bahis": "betting",
+    "betting": "betting",
+    "iddaa": "betting",
 }
 
-# Hard-deny keywords (substring match, case-insensitive) applied to a
-# candidate's name / url / page title: live TV, IPTV, cameras, radio,
-# 18+ content, sports and betting are never tracked and never published.
-# Intentionally conservative: a false positive only moves a decision to a
-# human (issue), a false negative would publish unwanted content.
+# Deny-category keywords (substring match, case-insensitive) used ONLY for
+# INFORMATIONAL reporting (denied_content_flags / discovery issue notes):
+# live TV, IPTV, cameras, radio, adult content, sports and betting. A match
+# NEVER rejects a site under the current policy; it only classifies it.
 DENY_CONTENT_KEYWORDS = (
     "iptv",
     "canlı tv", "canli tv", "canlitv",
@@ -98,12 +130,15 @@ _DENY_CONTENT_RE = re.compile(
 )
 
 # CloudStream TvType names used by the scaffolder (discovery.yml S9).
+# Verified against CloudStream master (library/src/commonMain/.../MainAPI.kt):
+# enum entries are Movie/TvSeries/Anime/Cartoon/Documentary -- "Documentaries"
+# is only the app's display label, not an enum value.
 CLOUDSTREAM_TV_TYPES = {
     "movie": "Movie",
     "series": "TvSeries",
     "anime": "Anime",
     "cartoon": "Cartoon",
-    "documentary": "Documentaries",
+    "documentary": "Documentary",
 }
 
 # Common multi-part public suffixes for the registered-domain heuristic.
@@ -190,12 +225,13 @@ def titles_match(a, b):
 # --------------------------------------------------------------------------
 
 def normalize_content_type(value):
-    """Map a raw label ("Film", "TV Series", "Belgesel") to an allowlist type.
+    """Map a raw label ("Film", "Canlı TV", "Belgesel") to a policy category.
 
-    Returns the canonical allowlist label, or None when the value is empty
-    or does not belong to the allowlist (unknown = rejected by policy).
+    Returns an allowlist type (movie/series/anime/cartoon/documentary) or a
+    denied category (live_tv/camera/radio/nsfw/sports/betting), or None when
+    the value is empty or unknown (unknown contributes no allowed type).
     """
-    text = re.sub(r"[^a-zçğıöşü0-9]+", " ", str(value or "").lower()).strip()
+    text = re.sub(r"[^a-zçğıöşü0-9+]+", " ", str(value or "").lower()).strip()
     if not text:
         return None
     if text in CONTENT_TYPE_ALIASES:
@@ -211,9 +247,11 @@ def record_content_types(provider, default=ALLOWED_CONTENT_TYPES):
 
     Records without an explicit ``contentTypes`` field (or with an empty
     list) are treated as potentially serving the whole allowlist: the policy
-    only REJECTS records that explicitly declare a non-allowlisted type or
-    hit a deny keyword. This keeps older registries (and the offline test
-    fixtures) valid; discovery-created records always declare explicit types.
+    only REJECTS records whose declared types normalize to NO allowed type
+    at all. Deny categories are informational flags only (see
+    denied_content_flags) and never reject a record on their own. This keeps
+    older registries (and the offline test fixtures) valid;
+    discovery-created records always declare explicit types.
     """
     raw = provider.get("contentTypes")
     if raw is None or raw == []:
@@ -233,18 +271,13 @@ def record_content_types(provider, default=ALLOWED_CONTENT_TYPES):
 def content_policy_violation(provider):
     """Content-policy check for a registry record or a discovery candidate.
 
-    Returns a human-readable rejection reason, or None when the record
-    satisfies the policy. Two layers:
-
-      1. deny keywords (name / url / title / titleSignature): live TV, IPTV,
-         cameras, radio, 18+ content, sports and betting;
-      2. a ``contentTypes`` declaration containing a value that does not
-         normalize into ALLOWED_CONTENT_TYPES.
+    A site is acceptable when it declares (or, for legacy untyped records,
+    may declare) at least one allowed content type. Denied categories (live
+    TV/IPTV, cameras, radio, 18+ content, sports, betting) never reject a
+    site on their own -- they only matter when the declaration contains NO
+    allowed type at all. Untyped records are permissive (backwards
+    compatible). Returns a human-readable rejection reason, or None.
     """
-    for key in ("name", "url", "title", "titleSignature"):
-        value = provider.get(key)
-        if value and _DENY_CONTENT_RE.search(str(value)):
-            return f"deny keyword in {key}: '{value}'"
     raw = provider.get("contentTypes")
     if raw is None or raw == []:
         return None  # untyped record: permissive default (backwards compatible)
@@ -253,9 +286,30 @@ def content_policy_violation(provider):
     if not isinstance(raw, (list, tuple)):
         return f"contentTypes must be a list, got: {raw!r}"
     normalized = [normalize_content_type(value) for value in raw]
-    if any(item is None for item in normalized):
-        return f"contentTypes outside policy: {raw!r}"
-    return None
+    if any(item in ALLOWED_CONTENT_TYPES for item in normalized):
+        return None
+    return f"no allowed content type in {raw!r}"
+
+
+def denied_content_flags(provider):
+    """INFORMATIONAL only: deny-category keywords found on the record.
+
+    Reports which denied categories (live TV/IPTV, cameras, radio, adult
+    content, sports, betting) appear in the record's name / url / title /
+    titleSignature. Flags NEVER reject a site under the current policy --
+    they exist so discovery issues and publish logs can describe the site.
+    Returns a list of "key: matched-keyword" strings (empty = no flags).
+    """
+    flags = []
+    for key in ("name", "url", "title", "titleSignature"):
+        value = provider.get(key)
+        if not value:
+            continue
+        for match in _DENY_CONTENT_RE.findall(str(value)):
+            entry = f"{key}: {match}"
+            if entry not in flags:
+                flags.append(entry)
+    return flags
 
 
 def tv_types_for(content_types):

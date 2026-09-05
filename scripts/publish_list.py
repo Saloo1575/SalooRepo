@@ -19,9 +19,11 @@ SalooRepo v2 publish policy (see docs/automation.md):
   5. When several eligible records would publish plugins that share one
      titleSignature (mirror sites), only the healthiest / most recently
      checked record publishes: active > degraded, then newest lastChecked.
-  6. Content-type policy: records whose contentTypes declaration (or name /
-     url / page title) violates the SalooRepo allowlist (movie, series,
-     anime, cartoon, documentary) are never published (see site_registry).
+  6. Content-type policy: records that declare NO allowed content type
+     (movie, series, anime, cartoon, documentary) are never published.
+     Denied categories (live TV, cameras, radio, adult, sports, betting)
+     found on a record are informational only and never reject it alone
+     (see site_registry).
 
 CLI:
   python3 scripts/publish_list.py build/plugins.json providers.json \

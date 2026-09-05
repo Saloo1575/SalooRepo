@@ -484,32 +484,50 @@ def test_14_validate_content_type_schema():
     assert reg.content_policy_violation(provider), "iptv declaration not rejected"
 
 
-def test_15_deny_keywords_reject_candidates():
+def test_15_content_policy_matrix():
+    # positive: at least one allowed type -> accepted (deny extras are fine)
+    accepted = [
+        {"contentTypes": ["movie"]},
+        {"contentTypes": ["series"]},
+        {"contentTypes": ["anime"]},
+        {"contentTypes": ["cartoon"]},
+        {"contentTypes": ["documentary"]},
+        {"contentTypes": ["movie", "live_tv"]},
+        {"contentTypes": ["series", "18+"]},
+        {"contentTypes": ["movie", "series", "live_tv", "18+"]},
+        # deny keywords in name/title no longer reject a typed site
+        {"name": "CanliTV HD", "title": "Canlı TV", "contentTypes": ["movie"]},
+    ]
+    for candidate in accepted:
+        assert reg.content_policy_violation(candidate) is None, candidate
+    # negative: declaration without any allowed content type -> rejected
     rejected = [
-        {"name": "CanliTV HD", "url": "https://canlitv.example", "title": "Canlı TV"},
-        {"name": "Movie Site", "url": "https://iptv.example", "title": "Movies"},
-        {"name": "Radio App", "url": "https://films.example", "title": "Film"},
-        {"name": "FilmX", "url": "https://filmx.example", "title": "18+ film izle"},
-        {"name": "SporMax", "url": "https://spormax.example", "title": "Maç yayını"},
-        {"name": "Kameracanli", "url": "https://film.example", "title": "webcam"},
-        {"name": "BahisForumu", "url": "https://filmler.example", "title": "bahis"},
+        {"contentTypes": ["live_tv"]},
+        {"contentTypes": ["18+"]},
+        {"contentTypes": ["radio"]},
+        {"contentTypes": ["camera"]},
+        {"contentTypes": ["sports"]},
+        {"contentTypes": ["betting"]},
+        {"contentTypes": ["reality"]},
     ]
     for candidate in rejected:
         assert reg.content_policy_violation(candidate), candidate
-    clean = {"name": "Film Sitesi", "url": "https://films.example", "title": "Film izle"}
-    assert reg.content_policy_violation(clean) is None, clean
-    typed = dict(clean, contentTypes=["cartoon", "documentary"])
-    assert reg.content_policy_violation(typed) is None, typed
-    bad_typed = dict(clean, contentTypes=["reality"])
-    assert reg.content_policy_violation(bad_typed), "reality must be rejected"
+    # legacy untyped records stay permissive even with deny keywords in name
+    untyped = {"name": "CanliTV HD", "title": "Canlı TV"}
+    assert reg.content_policy_violation(untyped) is None, untyped
+    # informational flags still report deny categories (they never reject)
+    flags = reg.denied_content_flags(
+        {"name": "CanliTV HD", "title": "Canlı TV", "contentTypes": ["movie"]})
+    assert flags, "denied_content_flags should report deny categories"
+    assert any("name" in flag for flag in flags), flags
 
 
 def test_16_tv_type_mapping():
     assert reg.tv_types_for(["movie", "anime"]) == ["Movie", "Anime"]
-    assert reg.tv_types_for(["documentary"]) == ["Documentaries"]
+    assert reg.tv_types_for(["documentary"]) == ["Documentary"]
     assert reg.tv_types_for(["cartoon", "series"]) == ["Cartoon", "TvSeries"]
     assert reg.tv_types_for(None) == [
-        "Movie", "TvSeries", "Anime", "Cartoon", "Documentaries"]
+        "Movie", "TvSeries", "Anime", "Cartoon", "Documentary"]
     assert reg.tv_types_for(["unknown"]) == []
 
 
@@ -550,8 +568,8 @@ def main():
              test_13_publish_content_type_policy)
     run_test("TEST 14", "Icerik-tipi sema: allowlist disi tur validate ile yakalanir",
              test_14_validate_content_type_schema)
-    run_test("TEST 15", "Deny keywords: IPTV/kamera/radyo/18+/spor/bahis reddedilir",
-             test_15_deny_keywords_reject_candidates)
+    run_test("TEST 15", "Icerik politikasi: >=1 izinli tur kabul, sadece deny tur red",
+             test_15_content_policy_matrix)
     run_test("TEST 16", "TvType eslemesi: 5 allowlist turu CloudStream'e dogru eslenir",
              test_16_tv_type_mapping)
     failed = [label for label, ok in RESULTS if not ok]
