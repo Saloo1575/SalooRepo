@@ -105,7 +105,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Detect Gradle wrapper
         id: gradle
-        run: echo \"present=$([ -f gradlew ] && echo true || echo false)\" >> $GITHUB_OUTPUT
+        run: |
+          if [ -f gradlew ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "WARNING: gradlew not found in repository; setup-java and Gradle build steps will be SKIPPED."
+          fi
       - uses: actions/setup-java@v4
         if: steps.gradle.outputs.present == 'true'
         with:

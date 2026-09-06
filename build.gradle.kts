@@ -81,9 +81,6 @@ subprojects {
         // inferred type is inaccessible" derleme hatası verir (ör. AltiYuzAltmisAltiFilmIzle).
         implementation("org.jspecify:jspecify:1.0.0")
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
-        // Orijinal Kekik-cloudstream root build.gradle.kts'inden aynen alındı:
-        // implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
-        // (W2MExtractor orijinal kodu withContext/delay/Dispatchers kullanıyor.)
         implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
     }
 }
