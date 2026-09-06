@@ -117,6 +117,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
       - name: Build CloudStream providers
         if: steps.gradle.outputs.present == 'true'
         run: chmod +x gradlew && ./gradlew --no-daemon make
