@@ -18,6 +18,25 @@
       "titleSignature": "Internet Archive: Digital Library of Free &amp; Borrowable Texts, Movies, Music &amp; Wayback Machine",
       "lastChecked": "2026-09-05T07:51:40Z",
       "lastError": null
+    },
+    {
+      "siteId": "blender-studio",
+      "name": "Blender Studio",
+      "url": "https://studio.blender.org",
+      "canonicalDomain": "blender.org",
+      "lastWorkingDomain": "blender.org",
+      "aliases": [],
+      "status": "active",
+      "category": "official",
+      "contentTypes": [
+        "movie",
+        "documentary"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "Blender Studio",
+      "lastChecked": "2026-09-08T23:10:32Z",
+      "lastError": null
     }
   ]
 }
