@@ -7,22 +7,43 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        // JitPack: pinned plugin sürümü için POM tabanlı çözümleme.
-        // (Snapshot-alias dizinindeki .module metadata'sı var olmayan
-        //  "gradle-master-SNAPSHOT.jar" dosyasına işaret ediyor; Gradle 8.12
-        //  .module bulunursa POM'a düşmediği için burada yalnızca POM kullanılır.)
+        // JitPack: artifact-only cozumleme. CI kaniti (run #52/#55): pinned dizindeki
+        // POM ".module" redirection marker tasiyor (do_not_remove:
+        // published-with-gradle-metadata); Gradle marker'i gorunce .module'u cekiyor
+        // ve .module icindeki "master-SNAPSHOT" self-version'u istenen
+        // "master-32895aedb6-1" ile celistigi icin "inconsistent module metadata /
+        // bad version" hatasi veriyor. artifact() ile metadata HIC okunmaz; JAR
+        // dogrudan Maven layout'undan cekilir (canli 200 dogrulamali).
         maven("https://jitpack.io") {
             metadataSources {
-                mavenPom()
+                artifact()
             }
         }
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // JitPack'te kalıcı olarak servis edilen immutable sürüm (canlı doğrulama:
-        // POM/JAR/.module = 200; JAR sha1 5326a60b… = -SNAPSHOT'ın byte-aynısı).
-        classpath("com.github.recloudstream.gradle:gradle:master-32895aedb6-1")
+        // Pinned plugin: immutable timestamped snapshot build (canli 200; JAR sha1
+        // 5326a60b... = -SNAPSHOT jar'inin byte-aynisi). @jar = artifact-only:
+        // POM/.module hic okunmadigindan transitive bagimliliklar OTOMATIK GELMEZ;
+        // plugin'in POM'unda bildirilen 4 runtime bagimliligi asagida elle verilir
+        // (kaynak kod kullanim kanitiyla).
+        classpath("com.github.recloudstream.gradle:gradle:master-32895aedb6-1@jar")
+        // Plugin Kotlin 2.4.0 stdlib'i ile derlendi. KGP 2.4.0 POM'u kotlin-stdlib'i
+        // tum bagimliliklarindan exclude ediyor; AGP'nin stdlib'i daha eski (1.9.x)
+        // oldugundan acikca sabitlenir (Maven Central, immutable, POM 200 dogrulanmis).
+        classpath("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")
+        // CompileDexTask (make zincirinde calisir) org.objectweb.asm.ClassReader +
+        // org.objectweb.asm.tree.ClassNode ile @CloudstreamPlugin taramasi yapiyor
+        // -> plugin'in derlendigi 9.9.1 sabitlenir (Central, immutable, POM 200;
+        // -SNAPSHOT doneminde de ayni surum classpath'teydi: run #48/#49 kaniti).
+        classpath("org.ow2.asm:asm:9.9.1")
+        classpath("org.ow2.asm:asm-tree:9.9.1")
+        // DeployWithAdbTask (Tasks.kt tarafindan ::class.java ile yuklenir) action
+        // govdesinde jadb tiplerini kullaniyor; sinif dogrulamasi jadb'yi cozebilir.
+        // Tag'li immutable JitPack artifact'i (POM+JAR 200 dogrulanmis); @jar ile
+        // POM'unun mockito/junit transitive'leri devre disi.
+        classpath("com.github.vidstige:jadb:v1.2.1@jar")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
     }
 }
