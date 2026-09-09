@@ -26,13 +26,13 @@ buildscript {
         // Pinned plugin: immutable timestamped snapshot build (canli 200; JAR sha1
         // 5326a60b... = -SNAPSHOT jar'inin byte-aynisi). @jar = artifact-only:
         // POM/.module hic okunmadigindan transitive bagimliliklar OTOMATIK GELMEZ;
-        // plugin'in POM'unda bildirilen 4 runtime bagimliligi asagida elle verilir
-        // (kaynak kod kullanim kanitiyla).
+        // plugin'in ihtiyac duydugu bagimliliklar asagida elle verilir (kaynak kod
+        // kullanim kanitiyla). NOT: kotlin-stdlib BILEREK YOK — Gradle 8.12
+        // buildscript classpath'inde kotlin-stdlib'i embedded Kotlin 2.0.21'e
+        // {strictly} ile pinliyor; dogrudan 2.4.0 bildirimi "inconsistent version
+        // constraints" hatasi veriyor (run #53/#56 kaniti). Plugin, yesil #48/#49
+        // kosularinda da pinned 2.0.21 stdlib ile sorunsuz calisti.
         classpath("com.github.recloudstream.gradle:gradle:master-32895aedb6-1@jar")
-        // Plugin Kotlin 2.4.0 stdlib'i ile derlendi. KGP 2.4.0 POM'u kotlin-stdlib'i
-        // tum bagimliliklarindan exclude ediyor; AGP'nin stdlib'i daha eski (1.9.x)
-        // oldugundan acikca sabitlenir (Maven Central, immutable, POM 200 dogrulanmis).
-        classpath("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")
         // CompileDexTask (make zincirinde calisir) org.objectweb.asm.ClassReader +
         // org.objectweb.asm.tree.ClassNode ile @CloudstreamPlugin taramasi yapiyor
         // -> plugin'in derlendigi 9.9.1 sabitlenir (Central, immutable, POM 200;
