@@ -39,10 +39,15 @@ jobs:
               raise SystemExit("registry invalid: %s" % "; ".join(problems))
 
           def open_issue_exists(title):
-              result = subprocess.run(
-                  ["gh", "issue", "list", "--state", "open", "--json", "title"],
-                  capture_output=True, text=True, check=False,
-              )
+              try:
+                  result = subprocess.run(
+                      ["gh", "issue", "list", "--state", "open", "--json", "title"],
+                      capture_output=True, text=True, check=False,
+                  )
+              except OSError as gh_error:
+                  # Issue reporting must never break the health-check pipeline.
+                  print(f"[WARN]    gh issue list unavailable: {gh_error}")
+                  return False
               try:
                   titles = [item.get("title", "") for item in json.loads(result.stdout or "[]")]
               except json.JSONDecodeError:
@@ -96,12 +101,16 @@ jobs:
                   if open_issue_exists(title):
                       print(f"[ISSUE]   open issue already exists: {title}")
                   else:
-                      subprocess.run(
-                          ["gh", "issue", "create", "--title", title,
-                           "--body", body, "--label", "health-change"],
-                          check=False,
-                      )
-                      print(f"[ISSUE]   created: {title}")
+                      try:
+                          subprocess.run(
+                              ["gh", "issue", "create", "--title", title,
+                               "--body", body, "--label", "health-change"],
+                              check=False,
+                          )
+                          print(f"[ISSUE]   created: {title}")
+                      except OSError as gh_error:
+                          # Probe/registry results survive even if gh fails.
+                          print(f"[WARN]    could not create issue: {gh_error}")
               elif after == "active" and before == "inactive":
                   print(f"[RECOVER] {site_id}: back to ACTIVE (no issue opened)")
 

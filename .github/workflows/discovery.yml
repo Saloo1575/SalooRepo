@@ -171,10 +171,15 @@ jobs:
               raise SystemExit(0)
 
           def open_issue_exists(title):
-              result = subprocess.run(
-                  ["gh", "issue", "list", "--state", "open", "--json", "title"],
-                  capture_output=True, text=True, check=False,
-              )
+              try:
+                  result = subprocess.run(
+                      ["gh", "issue", "list", "--state", "open", "--json", "title"],
+                      capture_output=True, text=True, check=False,
+                  )
+              except OSError as gh_error:
+                  # Issue reporting must never break the discovery pipeline.
+                  print(f"[WARN]    gh issue list unavailable: {gh_error}")
+                  return False
               try:
                   titles = [item.get("title", "") for item in json.loads(result.stdout or "[]")]
               except json.JSONDecodeError:
@@ -296,9 +301,14 @@ jobs:
                   else None
               )
               try:
+                  # enabled=False = human-approval gate: the scaffolded
+                  # placeholder is registered but NEVER published
+                  # (publish_list drops enabled=false records). A reviewed
+                  # commit flipping "enabled": true after a real scraping
+                  # implementation is what puts the site on the air.
                   entry = reg.add_provider(
                       data, candidate["name"], candidate["url"],
-                      category="official", extra=extra,
+                      category="official", extra=extra, enabled=False,
                   )
               except reg.DuplicateSiteError as exc:
                   # A concurrent run won the race; never crash, never double-add.
@@ -322,6 +332,40 @@ jobs:
               print("[NEXT]    validate-repository.yml runs the registry tests; build.yml "
                     "compiles the module, publishes *.cs3 and regenerates plugins.json / "
                     "repo.json on the builds branch")
+
+          # Human-approval gate reporting: every auto-added site is a
+          # PLACEHOLDER (enabled=false, never published) until a real
+          # scraping implementation lands. Open one issue listing the
+          # pending modules so the implementation work stays visible.
+          if added_modules:
+              pending_title = "Provider implementation needed (auto-added sites pending)"
+              pending_body = [
+                  "Discovery auto-added the following sites as PENDING providers:",
+                  "",
+              ]
+              pending_body += [
+                  f"- `{module}` (scaffolded placeholder module)" for module in added_modules
+              ]
+              pending_body += [
+                  "",
+                  "Placeholders are never published: publish_list.py drops",
+                  "`enabled: false` records. To publish a site: implement real",
+                  "scraping code (mainPage/search/load/loadLinks), then flip",
+                  '`"enabled": true` for its record in providers.json in a',
+                  "reviewed commit. build.yml will then compile the module and",
+                  "list the plugin on the builds branch.",
+              ]
+              try:
+                  if not open_issue_exists(pending_title):
+                      subprocess.run(
+                          ["gh", "issue", "create", "--title", pending_title,
+                           "--body", "\n".join(pending_body), "--label", "source-discovery"],
+                          check=False,
+                      )
+                      print(f"[ISSUE]   created: {pending_title}")
+              except OSError as gh_error:
+                  # Issue reporting must never break the registry/module pipeline.
+                  print(f"[WARN]    could not create pending-issue: {gh_error}")
 
           if added_modules or registry_changed:
               problems = reg.validate_registry(data)

@@ -531,6 +531,35 @@ def test_16_tv_type_mapping():
     assert reg.tv_types_for(["unknown"]) == []
 
 
+def test_17_auto_add_pending_never_published():
+    """Auto-add safety gate (discovery.yml S8): a record added with
+    enabled=False passes validation but is NEVER published by the
+    publish filter until a human flips enabled=True."""
+    data = base_registry()
+    pending = reg.add_provider(
+        data, "Pending Site", "https://pending.example",
+        category="official", extra={"contentTypes": ["movie"]},
+        enabled=False,
+    )
+    assert pending.get("enabled") is False, "auto-added record must be pending (enabled=False)"
+    problems = reg.validate_registry(data)
+    assert not problems, problems
+
+    entry = {
+        "internalName": "PendingSite",  # camel convention: siteId pending-site
+        "name": "Pending Site",
+        "url": "https://pending.example/plugin.cs3",
+    }
+    kept, decisions = pub.filter_plugins([entry], data)
+    assert kept == [], "enabled=False record must never be published"
+    assert decisions and decisions[0][2] == "drop", decisions
+
+    # control: after the human approval (enabled=True) the site publishes
+    reg.update_provider(data, pending["siteId"], enabled=True)
+    kept2, _ = pub.filter_plugins([entry], data)
+    assert len(kept2) == 1, "human approval (enabled=True) must publish the site"
+
+
 def main():
     print("SalooRepo site-registry tests")
     print("=" * 64)
@@ -572,6 +601,8 @@ def main():
              test_15_content_policy_matrix)
     run_test("TEST 16", "TvType eslemesi: 5 allowlist turu CloudStream'e dogru eslenir",
              test_16_tv_type_mapping)
+    run_test("TEST 17", "Auto-add guvenlik kapisi: enabled=False ASLA yayinlanmaz, insan onayi (enabled=True) yayinlar",
+             test_17_auto_add_pending_never_published)
     failed = [label for label, ok in RESULTS if not ok]
     print("=" * 64)
     print(f"{len(RESULTS) - len(failed)}/{len(RESULTS)} tests passed")

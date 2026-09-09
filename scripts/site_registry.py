@@ -520,11 +520,17 @@ def validate_registry(data):
 # mutations (create / update / move)
 # --------------------------------------------------------------------------
 
-def add_provider(data, name, url, category="community", probe_path="/", extra=None):
+def add_provider(data, name, url, category="community", probe_path="/", extra=None,
+                 enabled=True):
     """Create a NEW site record (0 -> 1 / N -> N+1).
 
     Raises DuplicateSiteError when the siteId or the domain is already tracked,
     so the same site can never be registered twice.
+
+    ``enabled=False`` registers a PENDING provider (discovery auto-add path):
+    publish_list drops enabled=false records, so a scaffolded placeholder can
+    never be published; a human flips the flag after implementing real
+    scraping code.
     """
     dom = normalize_domain(url)
     if not dom:
@@ -545,7 +551,7 @@ def add_provider(data, name, url, category="community", probe_path="/", extra=No
         "aliases": [],
         "status": "active",
         "category": category,
-        "enabled": True,
+        "enabled": bool(enabled),
         "probePath": probe_path or "/",
         "titleSignature": None,
         "lastChecked": utc_now_iso(),
