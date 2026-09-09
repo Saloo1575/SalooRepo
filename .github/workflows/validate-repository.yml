@@ -119,8 +119,7 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      # JitPack reliability: same cache + warm-up + retry strategy as
-      # build.yml (see the detailed comments there).
+      # Restore previously resolved dependencies to speed up builds.
       - name: Cache Gradle dependencies
         if: steps.gradle.outputs.present == 'true'
         uses: actions/cache@v4
@@ -129,41 +128,6 @@ jobs:
           key: gradle-modules-${{ runner.os }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts') }}
           restore-keys: |
             gradle-modules-${{ runner.os }}-
-      - name: Warm JitPack SNAPSHOT artifacts
-        if: steps.gradle.outputs.present == 'true'
-        run: |
-          urls=(
-            "https://jitpack.io/com/github/recloudstream/gradle/-SNAPSHOT/gradle--SNAPSHOT.pom"
-            "https://jitpack.io/com/github/recloudstream/gradle/gradle/-SNAPSHOT/gradle--SNAPSHOT.pom"
-            "https://jitpack.io/com/github/recloudstream/gradle/gradle/-SNAPSHOT/gradle--SNAPSHOT.jar"
-          )
-          for url in "${urls[@]}"; do
-            ok=0
-            for attempt in 1 2 3 4 5; do
-              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$url") || code=000
-              if [ "$code" = "200" ]; then
-                echo "[warm] $url -> 200 (attempt $attempt)"
-                ok=1
-                break
-              fi
-              echo "[warm] $url -> $code (attempt $attempt); retrying in 30s"
-              sleep 30
-            done
-            if [ "$ok" != "1" ]; then
-              echo "::warning::JitPack warm-up did not reach 200 for $url; Gradle retry may still recover."
-            fi
-          done
       - name: Build CloudStream providers
         if: steps.gradle.outputs.present == 'true'
-        run: |
-          chmod +x gradlew
-          for attempt in 1 2 3; do
-            if ./gradlew --no-daemon make; then
-              echo "[build] gradle attempt $attempt succeeded"
-              exit 0
-            fi
-            echo "[build] gradle attempt $attempt failed; retrying in 60s"
-            sleep 60
-          done
-          echo "[build] gradle failed after 3 attempts"
-          exit 1
+        run: chmod +x gradlew && ./gradlew --no-daemon make

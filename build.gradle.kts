@@ -7,12 +7,22 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+        // JitPack: pinned plugin sürümü için POM tabanlı çözümleme.
+        // (Snapshot-alias dizinindeki .module metadata'sı var olmayan
+        //  "gradle-master-SNAPSHOT.jar" dosyasına işaret ediyor; Gradle 8.12
+        //  .module bulunursa POM'a düşmediği için burada yalnızca POM kullanılır.)
+        maven("https://jitpack.io") {
+            metadataSources {
+                mavenPom()
+            }
+        }
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        // JitPack'te kalıcı olarak servis edilen immutable sürüm (canlı doğrulama:
+        // POM/JAR/.module = 200; JAR sha1 5326a60b… = -SNAPSHOT'ın byte-aynısı).
+        classpath("com.github.recloudstream.gradle:gradle:master-32895aedb6-1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
     }
 }
