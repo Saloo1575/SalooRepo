@@ -133,11 +133,13 @@ jobs:
           web_key = (os.environ.get("BRAVE_SEARCH_API_KEY") or "").strip()
           if web_key:
               web_queries = [
-                  ("movie", "watch free movies online full streaming site"),
-                  ("series", "watch tv series free online streaming site"),
-                  ("anime", "watch anime online free english sub dub site"),
-                  ("cartoon", "watch cartoons online free full episodes site"),
-                  ("documentary", "watch documentaries online free full site"),
+                  ("movie", "türkçe film izle hd full"),
+                  ("series", "türkçe dizi izle son bölüm"),
+                  ("anime", "türkçe anime izle altyazılı"),
+                  ("cartoon", "türkçe çizgi film izle"),
+                  ("documentary", "türkçe belgesel izle"),
+                  ("movie", "yabancı film izle türkçe altyazılı"),
+                  ("series", "yabancı dizi izle türkçe altyazılı"),
               ]
               # Hosts that are search/infrastructure noise, not trackable sites.
               web_skip_hosts = {
