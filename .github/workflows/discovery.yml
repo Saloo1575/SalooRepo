@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "23 5 * * 1"
   workflow_dispatch:
+    inputs:
+      manual_site:
+        description: "Manual site/domain candidate (e.g. example.com). Leave empty for normal discovery."
+        required: false
+        default: ""
 
 # contents: write is consumed only when AUTO_ADD_NEW_SITES is enabled
 # (registry update + provider module scaffold). The gate defaults to "false",
@@ -28,6 +33,12 @@ jobs:
         id: pipeline
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Web-hybrid lite (§50): optional search-engine key. When the secret
+          # is absent the pipeline falls back to the curated sources only.
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          # Manual candidate (§51): optional workflow_dispatch input. Empty on
+          # scheduled runs, so normal discovery behaviour is unchanged.
+          MANUAL_SITE: ${{ inputs.manual_site }}
         run: |
           python3 - <<'PY'
           import json
@@ -80,6 +91,113 @@ jobs:
                       print(f"[SOURCES] {len(candidate_sources)} curated sources from discovery_sources.json")
               except (json.JSONDecodeError, KeyError) as exc:
                   print(f"[WARN] discovery_sources.json unreadable ({exc}); using built-in list")
+
+          # ------------------------------------------------ S1a: MANUAL CANDIDATE (§51)
+          # Optional single site/domain provided via workflow_dispatch
+          # ("manual_site" input). The candidate joins the SAME S2..S6c
+          # chain below and is reported through the SAME issue; nothing is
+          # auto-added while AUTO_ADD is false. Adding it BEFORE the web
+          # layer means the web dedupe ("seen_domains") can never produce
+          # a second candidate for the same domain.
+          manual_site = (os.environ.get("MANUAL_SITE") or "").strip()
+          if manual_site:
+              manual_dom = reg.normalize_domain(manual_site)
+              if not manual_dom:
+                  print(f"[MANUAL] invalid domain ignored: {manual_site!r}")
+              else:
+                  already_listed = {
+                      reg.normalize_domain(c.get("url") or "")
+                      for c in candidate_sources
+                  }
+                  already_listed.discard("")
+                  if manual_dom in already_listed:
+                      print(
+                          f"[MANUAL] {manual_dom} is already covered by a "
+                          "curated/web source; not duplicated"
+                      )
+                  else:
+                      candidate_sources.append({
+                          "name": reg.registered_domain(manual_dom) or manual_dom,
+                          "url": "https://" + manual_dom,
+                          "reason": "manual entry (workflow_dispatch input)",
+                          "contentTypes": [],  # untyped: policy stays permissive
+                      })
+                      print(f"[MANUAL] added manual candidate: {manual_dom}")
+
+          # --------------------------------------------- S1b: WEB-HYBRID LITE (§50)
+          # Optional search-engine candidate generation. When
+          # BRAVE_SEARCH_API_KEY is not configured (or any query fails) the
+          # pipeline continues with the curated sources only — this layer can
+          # never fail the run. Candidates flow through the SAME S2..S6c
+          # chain below; nothing is auto-added while AUTO_ADD is false.
+          web_key = (os.environ.get("BRAVE_SEARCH_API_KEY") or "").strip()
+          if web_key:
+              web_queries = [
+                  ("movie", "watch free movies online full streaming site"),
+                  ("series", "watch tv series free online streaming site"),
+                  ("anime", "watch anime online free english sub dub site"),
+                  ("cartoon", "watch cartoons online free full episodes site"),
+                  ("documentary", "watch documentaries online free full site"),
+              ]
+              # Hosts that are search/infrastructure noise, not trackable sites.
+              web_skip_hosts = {
+                  "brave.com", "search.brave.com", "bing.com", "google.com",
+                  "duckduckgo.com", "github.com", "wikipedia.org",
+                  "reddit.com", "youtube.com", "facebook.com", "instagram.com",
+                  "twitter.com", "x.com", "tiktok.com", "amazon.com",
+                  "netflix.com", "hulu.com", "disneyplus.com", "primevideo.com",
+                  "hbo.com", "max.com", "paramountplus.com", "peacocktv.com",
+                  "archive.org", "commons.wikimedia.org", "media.ccc.de",
+                  "framatube.org", "images.nasa.gov", "studio.blender.org",
+              }
+              seen_domains = {
+                  reg.normalize_domain(c.get("url") or "") for c in candidate_sources
+              }
+              seen_domains.discard("")
+              web_added = 0
+              for content_type, query in web_queries:
+                  if web_added >= 15:  # hard cap: keep the run cheap
+                      break
+                  try:
+                      import urllib.parse
+                      import urllib.request
+                      api = (
+                          "https://api.search.brave.com/res/v1/web/search?"
+                          + urllib.parse.urlencode({"q": query, "count": 10})
+                      )
+                      req = urllib.request.Request(api, headers={
+                          "Accept": "application/json",
+                          "X-Subscription-Token": web_key,
+                      })
+                      with urllib.request.urlopen(req, timeout=20) as resp:
+                          payload = json.loads(resp.read().decode("utf-8"))
+                      results = (payload.get("web") or {}).get("results") or []
+                      for item in results:
+                          url = (item.get("url") or "").strip()
+                          if not url.startswith(("http://", "https://")):
+                              continue
+                          dom = reg.normalize_domain(url)
+                          if not dom or dom in web_skip_hosts or dom in seen_domains:
+                              continue
+                          if not dom.endswith(
+                              (".com", ".net", ".org", ".tv", ".to", ".io", ".cc", ".me", ".co", ".xyz")
+                          ):
+                              continue  # skip exotic TLDs (apk/pdf/loan spam etc.)
+                          seen_domains.add(dom)
+                          candidate_sources.append({
+                              "name": reg.registered_domain(dom) or dom,
+                              "url": "https://" + dom,
+                              "reason": f"web search (Brave): {query}",
+                              "contentTypes": [content_type],
+                          })
+                          web_added += 1
+                          if web_added >= 15:
+                              break
+                  except Exception as exc:
+                      print(f"[WEB] query skipped ({type(exc).__name__}: {exc})")
+              print(f"[WEB] {web_added} web-search candidates added to the chain")
+          else:
+              print("[WEB] BRAVE_SEARCH_API_KEY not set; using curated sources only")
 
           report = []
           new_candidates = []
