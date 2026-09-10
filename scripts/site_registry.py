@@ -625,6 +625,14 @@ def fetch(url, timeout=20, user_agent=USER_AGENT):
         return response.geturl(), response.status, response.read(262144).decode("utf-8", "ignore")
 
 
+# Module-level alias for the HTTP fetcher above. check_site()/confirm_same_site()
+# assign to a local named "fetch" (fetch = fetch_fn or _fetch_http); referencing
+# the module function through this alias avoids the UnboundLocalError caused by
+# the local name shadowing the module-level "fetch" (§52 CI evidence).
+_fetch_http = fetch
+
+
+
 def extract_title(html):
     match = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.IGNORECASE | re.DOTALL)
     if not match:
@@ -643,7 +651,7 @@ def check_site(provider, retries=2, timeout=20, fetch_fn=None):
     registry is used as a fallback. Network errors are retried to absorb
     transient failures. A site is NEVER removed from the registry here.
     """
-    fetch = fetch_fn or fetch
+    fetch = fetch_fn or _fetch_http
     base = (provider.get("url") or "").rstrip("/")
     probe_path = provider.get("probePath") or "/"
     targets = [base]
@@ -705,7 +713,7 @@ def confirm_same_site(provider, new_url, fetch_fn=None):
     if not signature:
         return (False, "no stored titleSignature to compare against")
     try:
-        fetch = fetch_fn or fetch
+        fetch = fetch_fn or _fetch_http
         _, _, body = fetch(new_url)
     except Exception as exc:
         return (False, f"new domain unreachable: {exc}")
