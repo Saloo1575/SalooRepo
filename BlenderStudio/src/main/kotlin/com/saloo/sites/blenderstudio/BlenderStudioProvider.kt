@@ -1,6 +1,5 @@
 package com.saloo.sites.blenderstudio
 
-import com.lagradost.cloudstream3.ExtractorLink
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -11,10 +10,11 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.loadExtractor
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 
 /**
  * Pilot provider for Blender Studio (https://studio.blender.org), the official
@@ -49,6 +49,16 @@ class BlenderStudioProvider : MainAPI() {
         /** Every film page <title> ends with this suffix (verified live). */
         private const val TITLE_SUFFIX = " - Blender Studio"
     }
+
+    /**
+     * Provider-local replacement for the removed CloudStream fixUrl() helper:
+     * the current API (com.lagradost:cloudstream3:pre-release) no longer ships
+     * it, so site-relative hrefs (e.g. "/projects/<slug>/") are resolved
+     * against mainUrl here. Absolute URLs pass through unchanged.
+     */
+    private fun fixUrl(url: String): String =
+        if (url.startsWith("http://") || url.startsWith("https://")) url
+        else mainUrl + (if (url.startsWith("/")) "" else "/") + url
 
     private data class Film(
         val title: String,
