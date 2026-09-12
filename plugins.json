@@ -1,0 +1,22 @@
+[
+  {
+    "fileHash": "sha256-bddd6fcd4a1fd8b13c7a3b8f258e669ee9cf57795a477e3fe92090a5ee776ff1",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/Saloo1575/SalooRepo",
+    "fileSize": 11657,
+    "status": 1,
+    "language": "en",
+    "authors": [
+      "Saloo1575"
+    ],
+    "tvTypes": [
+      "Movie",
+      "Documentary"
+    ],
+    "version": 1,
+    "internalName": "BlenderStudio",
+    "description": "Pilot provider for Blender Studio (official Blender open movies)",
+    "url": "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/BlenderStudio.cs3",
+    "name": "BlenderStudio"
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "name": "SALOORepo",
+  "description": "SALOO CloudStream Extensions",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/plugins.json"
+  ]
+}
