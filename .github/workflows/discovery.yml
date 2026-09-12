@@ -29,6 +29,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Keyless ddgs fallback (§60): install only when the Brave secret is
+      # absent — with a Brave key the S1b else branch below never runs.
+      - name: Install ddgs (keyless web fallback dependency)
+        if: ${{ secrets.BRAVE_SEARCH_API_KEY == '' }}
+        run: python3 -m pip install --quiet --disable-pip-version-check "ddgs>=9"
+
       - name: Run discovery pipeline
         id: pipeline
         env:
@@ -199,7 +205,82 @@ jobs:
                       print(f"[WEB] query skipped ({type(exc).__name__}: {exc})")
               print(f"[WEB] {web_added} web-search candidates added to the chain")
           else:
-              print("[WEB] BRAVE_SEARCH_API_KEY not set; using curated sources only")
+              # ------------------------------------------------ S1b-alt: DDGS (§60)
+              # Keyless fallback: ddgs metasearch (DuckDuckGo/Mojeek backends).
+              # No API key; the package is installed by the step above only when
+              # the Brave secret is absent. Any failure here stays contained:
+              # import errors or per-query errors just log and fall through to
+              # the curated sources (same contract as the Brave path).
+              try:
+                  from ddgs import DDGS
+              except Exception as import_exc:
+                  print(f"[WEB] ddgs not installed ({type(import_exc).__name__}); using curated sources only")
+                  DDGS = None
+              if DDGS is not None:
+                  # keep web_queries / web_skip_hosts in sync with the Brave branch above
+                  web_queries = [
+                      ("movie", "türkçe film izle hd full"),
+                      ("series", "türkçe dizi izle son bölüm"),
+                      ("anime", "türkçe anime izle altyazılı"),
+                      ("cartoon", "türkçe çizgi film izle"),
+                      ("documentary", "türkçe belgesel izle"),
+                      ("movie", "yabancı film izle türkçe altyazılı"),
+                      ("series", "yabancı dizi izle türkçe altyazılı"),
+                  ]
+                  web_skip_hosts = {
+                      "brave.com", "search.brave.com", "bing.com", "google.com",
+                      "duckduckgo.com", "github.com", "wikipedia.org",
+                      "reddit.com", "youtube.com", "facebook.com", "instagram.com",
+                      "twitter.com", "x.com", "tiktok.com", "amazon.com",
+                      "netflix.com", "hulu.com", "disneyplus.com", "primevideo.com",
+                      "hbo.com", "max.com", "paramountplus.com", "peacocktv.com",
+                      "archive.org", "commons.wikimedia.org", "media.ccc.de",
+                      "framatube.org", "images.nasa.gov", "studio.blender.org",
+                  }
+                  seen_domains = {
+                      reg.normalize_domain(c.get("url") or "") for c in candidate_sources
+                  }
+                  seen_domains.discard("")
+                  web_added = 0
+                  ddgs_client = DDGS(timeout=20)
+                  for content_type, query in web_queries:
+                      if web_added >= 15:  # same hard cap as the Brave path
+                          break
+                      try:
+                          results = ddgs_client.text(
+                              query=query,
+                              region="tr-tr",
+                              safesearch="moderate",
+                              backend="duckduckgo,mojeek",
+                              max_results=10,
+                          )
+                      except Exception as exc:
+                          print(f"[WEB] ddgs query skipped ({type(exc).__name__}: {exc})")
+                          continue
+                      for item in (results or []):
+                          url = (item.get("href") or item.get("url") or "").strip()
+                          if not url.startswith(("http://", "https://")):
+                              continue
+                          dom = reg.normalize_domain(url)
+                          if not dom or dom in web_skip_hosts or dom in seen_domains:
+                              continue
+                          if not dom.endswith(
+                              (".com", ".net", ".org", ".tv", ".to", ".io", ".cc", ".me", ".co", ".xyz")
+                          ):
+                              continue  # skip exotic TLDs (apk/pdf/loan spam etc.)
+                          seen_domains.add(dom)
+                          candidate_sources.append({
+                              "name": reg.registered_domain(dom) or dom,
+                              "url": "https://" + dom,
+                              "reason": f"web search (ddgs): {query}",
+                              "contentTypes": [content_type],
+                          })
+                          web_added += 1
+                          if web_added >= 15:
+                              break
+                  print(f"[WEB] {web_added} web-search candidates added to the chain (ddgs)")
+              else:
+                  print("[WEB] ddgs unavailable; using curated sources only")
 
           report = []
           new_candidates = []
