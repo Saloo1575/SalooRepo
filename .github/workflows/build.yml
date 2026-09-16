@@ -24,9 +24,40 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-        # §75: v3 kırıldı — android-actions issue #537 (`tools` paketi deprecate)
-        # ve #536 (commandlinetools URL 404). v4 = maintainer cmdline-tools yolu.
-        uses: android-actions/setup-android@v4
+        # §77: android-actions/setup-android v3/v4 kirik (upstream #536 commandlinetools
+        # URL 404, #537 tools paketi kaldirildi; fix release yok). GitHub ubuntu-latest
+        # runner'inda Android SDK PREINSTALLED: yalnizca dogrulama + PATH, indirme yok.
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          fi
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            for cand in /usr/local/lib/android/sdk /opt/android-sdk "$HOME/android-sdk"; do
+              if [ -d "$cand" ]; then export ANDROID_HOME="$cand"; break; fi
+            done
+          fi
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "##[error]No preinstalled Android SDK found on the runner"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          for sub in platform-tools cmdline-tools/latest/bin; do
+            if [ -d "$ANDROID_HOME/$sub" ]; then
+              echo "$ANDROID_HOME/$sub" >> "$GITHUB_PATH"
+            fi
+          done
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -e "$SDKM" ]; then
+            SDKM="$(command -v sdkmanager || true)"
+          fi
+          if [ -z "$SDKM" ]; then
+            echo "##[error]sdkmanager not found under ANDROID_HOME=$ANDROID_HOME"
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKM"
+          "$SDKM" --version
 
       # Restore previously resolved dependencies to speed up builds.
       - name: Cache Gradle dependencies
