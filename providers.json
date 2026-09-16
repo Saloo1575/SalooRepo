@@ -37,6 +37,94 @@
       "titleSignature": "Blender Studio",
       "lastChecked": "2026-09-08T23:10:32Z",
       "lastError": null
+    },
+    {
+      "siteId": "dizibox",
+      "name": "DiziBox",
+      "url": "https://www.dizibox.live",
+      "canonicalDomain": "dizibox.live",
+      "lastWorkingDomain": "dizibox.live",
+      "aliases": [],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "series"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "DiziBOX - Yabancı Dizi izle, Yabancı Diziler",
+      "lastChecked": "2026-09-16T01:20:00Z",
+      "lastError": null,
+      "internalNames": [
+        "DiziBox"
+      ]
+    },
+    {
+      "siteId": "dizimom",
+      "name": "DiziMom",
+      "url": "https://www.dizimom.diy",
+      "canonicalDomain": "dizimom.diy",
+      "lastWorkingDomain": "dizimom.diy",
+      "aliases": [
+        "dizimom.plus"
+      ],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "series"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "Dizi izle - Dizimom | Yabancı dizi izle",
+      "lastChecked": "2026-09-16T01:18:00Z",
+      "lastError": null,
+      "internalNames": [
+        "DiziMom"
+      ]
+    },
+    {
+      "siteId": "cizgimax",
+      "name": "CizgiMax",
+      "url": "https://cizgimax.online",
+      "canonicalDomain": "cizgimax.online",
+      "lastWorkingDomain": "cizgimax.online",
+      "aliases": [],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "cartoon",
+        "anime",
+        "movie"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "ÇizgiMax - HD Çizgi Film İzle",
+      "lastChecked": "2026-09-16T01:12:00Z",
+      "lastError": null,
+      "internalNames": [
+        "CizgiMax"
+      ]
+    },
+    {
+      "siteId": "ddizi",
+      "name": "DDizi",
+      "url": "https://www.ddizi.im",
+      "canonicalDomain": "ddizi.im",
+      "lastWorkingDomain": "ddizi.im",
+      "aliases": [],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "series"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "Ddizi, dizi izle, dizi seyret, dizi, canlı dizi, ddizi.im",
+      "lastChecked": "2026-09-16T01:19:00Z",
+      "lastError": null,
+      "internalNames": [
+        "DDizi"
+      ]
     }
   ]
 }

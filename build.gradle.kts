@@ -44,7 +44,12 @@ buildscript {
         // Tag'li immutable JitPack artifact'i (POM+JAR 200 dogrulanmis); @jar ile
         // POM'unun mockito/junit transitive'leri devre disi.
         classpath("com.github.vidstige:jadb:v1.2.1@jar")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
+        // §65 (2026-09-16): 2.4.0'dan 2.0.21'e DÖNDÜRÜLDÜ. Kanıt: D8 8.7.18 (AGP 8.7.3)
+        // "An error occurred when parsing kotlin metadata ... newer version of kotlin
+        // than the kotlin version released when this version of R8 was created" hatası
+        // verip compileDex'i kırıyor (DiziBox$load$1 / $processIframe$3). 2.0.21 =
+        // yesil #48/#49 kosularinin dogrulanmis kombinasyonu.
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21")
     }
 }
 
@@ -93,7 +98,12 @@ subprojects {
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
                     "-Xno-receiver-assertions",
-                    "-Xjspecify-annotations=ignore"
+                    "-Xjspecify-annotations=ignore",
+                    // §65 (2026-09-16): com.lagradost:cloudstream3:pre-release JAR'i Kotlin
+                    // 2.4.0 metadata'siyla derlenmis; KGP 2.0.21 (asagidaki D8 uyumu icin
+                    // zorunlu) metadata 2.2'ye kadar okur. Bayrak uyumsuzluk kontrolunu
+                    // atlatir (provider'larin kullandigi API'ler eski ve stabil).
+                    "-Xskip-metadata-version-check"
                 )
             }
         }
