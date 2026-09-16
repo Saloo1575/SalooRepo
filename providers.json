@@ -146,6 +146,29 @@
       "internalNames": [
         "DiziYou"
       ]
+    },
+    {
+      "siteId": "dizilla",
+      "name": "Dizilla",
+      "url": "https://dizilla.now",
+      "canonicalDomain": "dizilla.now",
+      "lastWorkingDomain": "dizilla.now",
+      "aliases": [
+        "dizilla.to"
+      ],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "series"
+      ],
+      "enabled": false,
+      "probePath": "/",
+      "titleSignature": null,
+      "lastChecked": "2026-09-17T00:00:00Z",
+      "lastError": null,
+      "internalNames": [
+        "Dizilla"
+      ]
     }
   ]
 }

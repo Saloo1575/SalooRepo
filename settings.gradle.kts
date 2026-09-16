@@ -9,6 +9,11 @@ rootProject.name = "SalooRepo"
 // olarak derlemeye dahil olur.
 val disabled = listOf("ExampleProvider")
 
+// §74A: Dizilla modülü. Aşağıdaki auto-include döngüsü de build.gradle.kts
+// içeren tüm kök klasörlerini kapsar; Gradle aynı project path için include'u
+// idempotent işlediğinden açık kayıt çift include sorununa yol açmaz.
+include("Dizilla")
+
 File(rootDir, ".").eachDir { dir ->
     if (!disabled.contains(dir.name) && File(dir, "build.gradle.kts").exists()) {
         include(dir.name)
