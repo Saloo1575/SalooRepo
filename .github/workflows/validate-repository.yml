@@ -118,7 +118,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        # §75: v3 kırıldı (android-actions #536/#537) — build.yml ile aynı düzeltme.
+        uses: android-actions/setup-android@v4
       # Restore previously resolved dependencies to speed up builds.
       - name: Cache Gradle dependencies
         if: steps.gradle.outputs.present == 'true'

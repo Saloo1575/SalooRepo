@@ -21,7 +21,8 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        # §75: v3 kırıldı (android-actions #536/#537) — build.yml ile aynı düzeltme.
+        uses: android-actions/setup-android@v4
 
       - name: Build plugins
         run: |
