@@ -125,6 +125,27 @@
       "internalNames": [
         "DDizi"
       ]
+    },
+    {
+      "siteId": "diziyou",
+      "name": "DiziYou",
+      "url": "https://www.diziyou.one",
+      "canonicalDomain": "diziyou.one",
+      "lastWorkingDomain": "diziyou.one",
+      "aliases": [],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "series"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "Diziyou - Türkçe Dublaj & Altyazılı Yabancı Dizi İzle",
+      "lastChecked": "2026-09-16T01:30:00Z",
+      "lastError": null,
+      "internalNames": [
+        "DiziYou"
+      ]
     }
   ]
 }
