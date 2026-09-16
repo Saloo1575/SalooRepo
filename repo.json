@@ -1,6 +1,7 @@
 {
   "name": "SALOORepo",
-  "description": "SALOO CloudStream Extensions",
+  ,"description": "SALOO CloudStream Extensions",
+"iconUrl": "https://avatars.githubusercontent.com/u/154738646?v=4",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/Saloo1575/SalooRepo/builds/plugins.json"
