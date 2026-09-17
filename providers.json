@@ -148,6 +148,27 @@
       ]
     },
     {
+      "siteId": "anizm",
+      "name": "Anizm",
+      "url": "https://anizm.com.tr",
+      "canonicalDomain": "anizm.com.tr",
+      "lastWorkingDomain": "anizm.com.tr",
+      "aliases": [],
+      "status": "active",
+      "category": "community",
+      "contentTypes": [
+        "anime"
+      ],
+      "enabled": true,
+      "probePath": "/",
+      "titleSignature": "Anime İzle | Anizm | Türkçe Altyazılı Anime İzle",
+      "lastChecked": "2026-09-17T00:00:00Z",
+      "lastError": null,
+      "internalNames": [
+        "Anizm"
+      ]
+    },
+    {
       "siteId": "dizilla",
       "name": "Dizilla",
       "url": "https://dizilla.now",
