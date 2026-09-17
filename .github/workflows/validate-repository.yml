@@ -118,8 +118,43 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Setup Android SDK
-        # §75: v3 kırıldı (android-actions #536/#537) — build.yml ile aynı düzeltme.
-        uses: android-actions/setup-android@v4
+        # §86: android-actions/setup-android@v4 kırık (upstream #537: legacy 'tools'
+        # paketi cmdline-tools 20.0'da kaldırıldı → "sdkmanager tools" exit 1;
+        # Run #70 Build providers fail kanıtı). §77'deki build.yml çözümüyle AYNI:
+        # GitHub ubuntu-latest runner'ında Android SDK PREINSTALLED — indirme yok,
+        # yalnızca tespit + ANDROID_HOME/ANDROID_SDK_ROOT + PATH + sdkmanager kontrolü.
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          fi
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            for cand in /usr/local/lib/android/sdk /opt/android-sdk "$HOME/android-sdk"; do
+              if [ -d "$cand" ]; then export ANDROID_HOME="$cand"; break; fi
+            done
+          fi
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "##[error]No preinstalled Android SDK found on the runner"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          for sub in platform-tools cmdline-tools/latest/bin; do
+            if [ -d "$ANDROID_HOME/$sub" ]; then
+              echo "$ANDROID_HOME/$sub" >> "$GITHUB_PATH"
+            fi
+          done
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -e "$SDKM" ]; then
+            SDKM="$(command -v sdkmanager || true)"
+          fi
+          if [ -z "$SDKM" ]; then
+            echo "##[error]sdkmanager not found under ANDROID_HOME=$ANDROID_HOME"
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKM"
+          "$SDKM" --version
       # Restore previously resolved dependencies to speed up builds.
       - name: Cache Gradle dependencies
         if: steps.gradle.outputs.present == 'true'
