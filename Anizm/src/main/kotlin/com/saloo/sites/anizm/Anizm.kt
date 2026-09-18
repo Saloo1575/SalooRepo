@@ -56,10 +56,15 @@ class Anizm : MainAPI() {
         private const val UA =
             "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
-        /** Bölüm/alternatif/video XHR endpointleri için ortak header (keşif kanıtı). */
+        /** Bölüm/alternatif/video XHR endpointleri için ortak header.
+         *  §99 canlı izolasyon kanıtı: /searchAnime için Referer ZORUNLU —
+         *  UA+XHR kombinasyonu 200+404-HTML döndürüyor, UA+XHR+Referer GERÇEK JSON.
+         *  Accept tek başına yetersiz (T4) → eklenmedi ("gereksiz değişiklik yok").
+         *  loadLinks kendi Referer'ını per-request override ediyor (map birleşimi). */
         private val XHR_HEADERS = mapOf(
             "User-Agent" to UA,
             "X-Requested-With" to "XMLHttpRequest",
+            "Referer" to "https://anizm.com.tr/",
         )
 
         private const val SEARCH_PATH = "/searchAnime"
