@@ -43,6 +43,7 @@ from __future__ import annotations
 import datetime
 import json
 import re
+import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
@@ -619,9 +620,21 @@ def compute_status(site_reachable, probe_ok):
 
 
 def fetch(url, timeout=20, user_agent=USER_AGENT):
-    """GET a url, following redirects. Returns (final_url, http_status, body)."""
+    """GET a url, following redirects. Returns (final_url, http_status, body).
+
+    HTTP errors (4xx/5xx) are returned as a RESPONSE, not raised: urllib raises
+    HTTPError for them, which would make check_site() misclassify a reachable
+    site (bot-protected 403, temporary 5xx) as INACTIVE instead of DEGRADED and
+    silently drop it from the publish list (Anizm 403 -> inactive, §95 kanıt).
+    Network errors (DNS / connection / timeout) still raise and stay INACTIVE.
+    """
     request = urllib.request.Request(url, headers={"User-Agent": user_agent})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    try:
+        response = urllib.request.urlopen(request, timeout=timeout)
+    except urllib.error.HTTPError as error:  # 4xx/5xx: a valid probe ANSWER
+        return (error.geturl() or url, error.code,
+                error.read(262144).decode("utf-8", "ignore"))
+    with response:
         return response.geturl(), response.status, response.read(262144).decode("utf-8", "ignore")
 
 
