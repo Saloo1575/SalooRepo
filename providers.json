@@ -16,7 +16,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Internet Archive: Digital Library of Free &amp; Borrowable Texts, Movies, Music &amp; Wayback Machine",
-      "lastChecked": "2026-09-18T08:15:26Z",
+      "lastChecked": "2026-09-18T22:00:13Z",
       "lastError": null
     },
     {
@@ -35,7 +35,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Blender Studio",
-      "lastChecked": "2026-09-18T08:15:27Z",
+      "lastChecked": "2026-09-18T22:00:14Z",
       "lastError": null
     },
     {
@@ -45,7 +45,7 @@
       "canonicalDomain": "dizibox.live",
       "lastWorkingDomain": "dizibox.live",
       "aliases": [],
-      "status": "inactive",
+      "status": "degraded",
       "category": "community",
       "contentTypes": [
         "series"
@@ -53,8 +53,8 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "DiziBOX - Yabancı Dizi izle, Yabancı Diziler",
-      "lastChecked": "2026-09-18T08:15:28Z",
-      "lastError": "HTTPError: HTTP Error 403: Forbidden",
+      "lastChecked": "2026-09-18T22:00:14Z",
+      "lastError": "HTTP 403 on /",
       "internalNames": [
         "DiziBox"
       ]
@@ -76,7 +76,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Dizi izle - Dizimom | Yabancı dizi izle",
-      "lastChecked": "2026-09-18T08:15:29Z",
+      "lastChecked": "2026-09-18T22:00:15Z",
       "lastError": null,
       "internalNames": [
         "DiziMom"
@@ -99,7 +99,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "ÇizgiMax - HD Çizgi Film İzle",
-      "lastChecked": "2026-09-18T08:15:30Z",
+      "lastChecked": "2026-09-18T22:00:15Z",
       "lastError": null,
       "internalNames": [
         "CizgiMax"
@@ -120,7 +120,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Ddizi, dizi izle, dizi seyret, dizi, canlı dizi, ddizi.im",
-      "lastChecked": "2026-09-18T08:15:30Z",
+      "lastChecked": "2026-09-18T22:00:17Z",
       "lastError": null,
       "internalNames": [
         "DDizi"
@@ -133,7 +133,7 @@
       "canonicalDomain": "diziyou.one",
       "lastWorkingDomain": "diziyou.one",
       "aliases": [],
-      "status": "inactive",
+      "status": "degraded",
       "category": "community",
       "contentTypes": [
         "series"
@@ -141,8 +141,8 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Diziyou - Türkçe Dublaj & Altyazılı Yabancı Dizi İzle",
-      "lastChecked": "2026-09-18T08:15:30Z",
-      "lastError": "HTTPError: HTTP Error 403: Forbidden",
+      "lastChecked": "2026-09-18T22:00:17Z",
+      "lastError": "HTTP 403 on /",
       "internalNames": [
         "DiziYou"
       ]
@@ -154,7 +154,7 @@
       "canonicalDomain": "anizm.com.tr",
       "lastWorkingDomain": "anizm.com.tr",
       "aliases": [],
-      "status": "inactive",
+      "status": "degraded",
       "category": "community",
       "contentTypes": [
         "anime"
@@ -162,8 +162,8 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Anime İzle | Anizm | Türkçe Altyazılı Anime İzle",
-      "lastChecked": "2026-09-18T08:15:33Z",
-      "lastError": "HTTPError: HTTP Error 403: Forbidden",
+      "lastChecked": "2026-09-18T22:00:18Z",
+      "lastError": "HTTP 403 on /",
       "internalNames": [
         "Anizm"
       ]
