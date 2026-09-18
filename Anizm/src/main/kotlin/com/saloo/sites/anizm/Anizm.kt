@@ -36,14 +36,21 @@ import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.json.JSONObject
+import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
 class Anizm : MainAPI() {
     override var mainUrl = "https://anizm.com.tr"
-    override var name = "Anizm"
-    override val hasMainPage = false
+    // §93: kullanıcıya görünen provider adı — "SiteAdı [Saloo]" ad kuralı.
+    override var name = "Anizm [Saloo]"
+    // §93: ana sayfa provider listesine girebilmesi için zorunlu (Sourcegraph kanıtı:
+    // AppContextUtils.kt:472 hasMainPage filtresi).
+    override val hasMainPage = true
     override var lang = "tr"
-    override val supportedTypes = setOf(TvType.TvSeries)
+    // §93: anime sitesi; CizgiMax (çalışan örnek) ve resmi Anizm referansı TvType.Anime
+    // beyan eder → Animeler chip'inde de listelenir. TvSeries korunur (search/load
+    // TvSeries döndürüyor, §90 akışı bozulmaz).
+    override val supportedTypes = setOf(TvType.TvSeries, TvType.Anime)
 
     companion object {
         private const val UA =
@@ -117,6 +124,105 @@ class Anizm : MainAPI() {
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+
+    // ------------------------------------------------- MAIN PAGE (§93, canlı doğrulamalı)
+
+    /**
+     * §93 canlı doğrulama (2026-09-18, anizm.com.tr):
+     *  - Eski referans provider'ın listesi (anizm.net/anime-izle?sayfa=) YENİ sitede ÖLÜ:
+     *    /animeler ve /populer-animeler = 404; /anime-izle?sayfa=N ana sayfanın birebir
+     *    kopyası döndürüyor (grid AJAX "Anime yükleniyor..." — SSR liste YOK). KULLANILMAZ.
+     *  - GERÇEK SSR listeler (canlı 200 + içerik kanıtlı):
+     *      "/"  → "Bu Sezon Popüler" slider'ı (bölüm linkli kartlar)
+     *      "/takvim" → yayın takvimi (Pazartesi..Pazar gün başlıkları, ~180 bölüm linkli kart;
+     *      kart linkleri anizm.net host'lu → mainUrl'e normalize edilir)
+     *  - Kart link deseni (canlı kanıt): /<slug>-<N>-bolum(-final)?(-izle)? → "-<N>-bolum..."
+     *    kırpılıp anime DETAY sayfasına bağlanır (detay zinciri §90'da doğrulanmış;
+     *    /grand-blue-season-3 canlı 200 + 1..11 bölüm listeli).
+     */
+    override val mainPage = mainPageOf(
+        "$mainUrl/" to "Bu Sezon Popüler",
+        "$mainUrl/takvim" to "Yayın Takvimi",
+    )
+
+    /** Takvim gün başlıkları (canlı kanıt: /takvim'de Pazartesi..Pazar başlıkları). */
+    private val WEEKDAY_REGEX =
+        Regex("""^(Pazartesi|Salı|Çarşamba|Perşembe|Cuma|Cumartesi|Pazar)$""")
+
+    private val EPISODE_HREF_FRAGMENT = "-bolum"
+    private val CARD_EPISODE_REGEX = Regex("""(\d+)\.\s?B[öo]l[üu]m""", RegexOption.IGNORE_CASE)
+
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val document = app.get(request.data, headers = mapOf("User-Agent" to UA)).document
+
+        // Kartlar + gün başlıkları belge sırasında taranır. Seçiciler YALNIZ canlı
+        // doğrulanmış desenlere dayanır: bölüm linkli <a> (href'te "-bolum") + içinde
+        // poster <img>. Gün başlıkları etiket-bağımsız (ownText birebir gün adı) bulunur
+        // → class değişikliklerine dayanıklı; gün bulunamazsa tek liste (request.name).
+        val sections = LinkedHashMap<String, MutableList<SearchResponse>>()
+        var currentSection = request.name
+        for (element in document.body().select("*")) {
+            val ownText = element.ownText().trim()
+            if (ownText.matches(WEEKDAY_REGEX)) {
+                currentSection = ownText
+                continue
+            }
+            if (element.tagName() != "a") continue
+            val href = element.attr("href")
+            if (!href.contains(EPISODE_HREF_FRAGMENT)) continue
+            val posterImg = element.selectFirst("img") ?: continue
+
+            val detailUrl = toAnimeDetailUrl(href) ?: continue
+            val section = sections.getOrPut(currentSection) { mutableListOf() }
+            if (section.any { it.url == detailUrl }) continue
+
+            val title = cardTitle(element, detailUrl) ?: continue
+            val episodeNo = CARD_EPISODE_REGEX.find(element.text())?.groupValues?.get(1)?.toIntOrNull()
+            section += newAnimeSearchResponse(title, detailUrl, TvType.Anime) {
+                posterUrl = fixUrlNull(posterImg.attr("src").ifBlank { posterImg.attr("data-src") })
+                if (episodeNo != null) addSub(episodeNo)
+            }
+        }
+
+        val lists = sections.map { (sectionName, items) -> HomePageList(sectionName, items) }
+            .filter { it.list.isNotEmpty() }
+        if (lists.isEmpty()) {
+            throw ErrorLoadingException("Anizm: ana sayfa listesi boş döndü (${request.data})")
+        }
+        // İki kaynak da sayfalanamaz (canlı doğrulama: ?sayfa= parametresi SSR'ı değiştirmiyor).
+        return newHomePageResponse(lists, hasNext = false)
+    }
+
+    /**
+     * Bölüm linkli href'i anime DETAY URL'ine çevirir (referans provider'daki
+     * getProperAnimeLink deseni): host (anizm.net/anizm.tv) → mainUrl normalize;
+     * "-<N>-bolum..." soneki kırpılır (takvim + ana sayfa canlı kanıtı).
+     */
+    private fun toAnimeDetailUrl(href: String): String? {
+        if (href.isBlank()) return null
+        val absolute = fixUrl(href)
+        if (!absolute.contains(EPISODE_HREF_FRAGMENT)) return null
+        val stripped = absolute.replace(Regex("""-\d+-bolum.*$"""), "")
+        val path = stripped.substringAfter("://", missingDelimiterValue = "").substringAfter('/')
+        return if (path.isBlank()) null else "$mainUrl/$path"
+    }
+
+    /** Kart başlığı: önce img alt, sonra anchor metni ("N. Bölüm", "Son Eklenen: ...", "- Anizm.TV" kırpılır). */
+    private fun cardTitle(element: Element, detailUrl: String): String? {
+        val candidates = listOfNotNull(
+            element.selectFirst("img")?.attr("alt"),
+            element.text(),
+        )
+        for (raw in candidates) {
+            val cleaned = raw
+                .replace(Regex("""^\s*\d+\.\s*B[öo]l[üu]m(\s+Final)?\s*""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*Son\s+Eklenen:\s*\d+\.\s*B[öo]l[üu]m(\s+Final)?\s*$""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*-\s*Anizm(\.TV)?\s*$""", RegexOption.IGNORE_CASE), "")
+                .trim()
+            if (cleaned.isNotBlank()) return cleaned
+        }
+        return detailUrl.trimEnd('/').substringAfterLast('/').replace('-', ' ')
+    }
 
     // --------------------------------------------------------------- LOAD
 
