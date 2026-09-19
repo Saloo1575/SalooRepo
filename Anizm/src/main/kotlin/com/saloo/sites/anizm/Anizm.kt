@@ -334,7 +334,26 @@ class Anizm : MainAPI() {
         }
         if (episodeHtml.isBlank()) return false
 
+        var hdvidDelivered = false
+
         for (translatorUrl in TRANSLATOR_REGEX.findAll(episodeHtml).map { it.groupValues[1] }.distinct()) {
+            // §105: HDVid — Beta Player'dan bağımsız AYRI source (tek gerçek kalite 360p;
+            // canlı kanıt: /video → /player/<id> iframe-in-iframe → sources file v.mp4 206).
+            val hdvidMp4Url = fetchHdvidMp4Url(translatorUrl)
+            if (hdvidMp4Url != null) {
+                hdvidDelivered = true
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name = "$name · HDVid",
+                        url = hdvidMp4Url,
+                        type = ExtractorLinkType.VIDEO,
+                    ) {
+                        this.headers = mapOf("Referer" to "$mainUrl/")
+                        this.quality = Qualities.P360.value
+                    }
+                )
+            }
             val betaVideoUrl = fetchBetaPlayerVideoUrl(translatorUrl) ?: continue
 
             // 2) /video/<videoId> → player iframe.
@@ -385,7 +404,8 @@ class Anizm : MainAPI() {
             }
             if (delivered) return true
         }
-        return false
+        // Beta Player hiç çalışmazsa bile HDVid tek kaynak olarak geçerli (§105).
+        return hdvidDelivered
     }
 
     /**
@@ -410,6 +430,64 @@ class Anizm : MainAPI() {
                 return match.groupValues[1]
             }
         }
+        return null
+    }
+
+    /**
+     * Translator endpoint'i → alternatif listesi → "HDVid" alternatifinin
+     * /player/<videoId> iframe'indeki sources[].file MP4 URL'i.
+     * §105 canlı kanıt: /video yanıtı bazen /player/<id>'ye İÇ-İÇE iframe döndürüyor
+     * (iki katman GET gerekli); sources[] tek gerçek kalite 360p (etiket HTML'de,
+     * uydurma yok). Dönüş: doğrudan MP4 ExtractorLink URL'i (Referer anizm.com.tr).
+     */
+    private suspend fun fetchHdvidMp4Url(translatorUrl: String): String? {
+        val body = try {
+            app.get(translatorUrl, headers = XHR_HEADERS).text
+        } catch (_: Exception) {
+            return null
+        }
+        val dataHtml = try {
+            JSONObject(body).optString("data")
+        } catch (_: Exception) {
+            return null
+        }
+        if (dataHtml.isBlank()) return null
+
+        var hdvidVideoUrl: String? = null
+        for (match in ALTERNATIVE_REGEX.findAll(dataHtml)) {
+            if (match.groupValues[2].trim().equals("HDVid", ignoreCase = true)) {
+                hdvidVideoUrl = match.groupValues[1]
+                break
+            }
+        }
+        if (hdvidVideoUrl == null) return null
+
+        val playerHtml = try {
+            JSONObject(app.get(hdvidVideoUrl, headers = XHR_HEADERS).text)
+                .optString("player")
+        } catch (_: Exception) {
+            return null
+        }
+        if (playerHtml.isBlank()) return null
+
+        var html = playerHtml
+        // iframe-in-iframe: /video yanıtı bazen /player/<id>'yi iframe olarak verir
+        // (canlı kanıt §105) → ikinci katmanı da GET et.
+        IFRAME_SRC_REGEX.find(playerHtml)?.groupValues?.get(1)?.let { inner ->
+            if (inner.startsWith("$mainUrl/player/")) {
+                html = try {
+                    app.get(inner, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/")).text
+                } catch (_: Exception) {
+                    return null
+                }
+            }
+        }
+        // HDVid'de doğrulanan tek gerçek kalite 360p; birden fazla kalite görürse
+        // hepsi eklenir (§105 kalite kuralı — uydurma yok).
+        Regex("""file\s*:\s*"([^"]+\.(?:mp4|m3u8))"\s*,\s*label\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+            .findAll(html)
+            .map { Triple(it.groupValues[1], it.groupValues[2], it) }
+            .lastOrNull()?.let { return it.first }
         return null
     }
 }
