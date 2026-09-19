@@ -10,7 +10,7 @@ import org.jsoup.Jsoup
 
 class CizgiMax : MainAPI() {
     override var mainUrl              = "https://cizgimax.online"
-    override var name                 = "ÇizgiMax"
+    override var name                 = "CizgiMax [Saloo]"
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = false
