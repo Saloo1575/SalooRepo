@@ -16,7 +16,7 @@ import org.jsoup.nodes.Element
 
 class DDizi : MainAPI() {
     override var mainUrl              = "https://www.ddizi.im"
-    override var name                 = "DDizi"
+    override var name                 = "DDizi [Saloo]"
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = false

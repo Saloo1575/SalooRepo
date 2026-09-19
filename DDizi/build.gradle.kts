@@ -1,7 +1,7 @@
-version = 23
+version = 1
 
 cloudstream {
-    authors = listOf("keyiflerolsun", "Saloo1575")
+    authors = listOf("Saloo1575")
     language = "tr"
     description = "DDizi.im için Cloudstream eklentisi (Kekik-cloudstream kaynağından taşındı, §65)"
 
