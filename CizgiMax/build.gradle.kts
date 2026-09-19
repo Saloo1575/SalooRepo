@@ -1,7 +1,7 @@
-version = 19
+version = 20
 
 cloudstream {
-    authors = listOf("keyiflerolsun", "Saloo1575")
+    authors = listOf("Saloo1575")
     language = "tr"
     description = "ÇizgiMax ile Çizgi Film izlemek artık daha kolay, donmadan full hd ve reklamsız bir sitedir, içerisinde 700 den fazla çizgi film olan, Bu site bu işi profesyonelce yapıyor. (Kekik-cloudstream kaynağından taşındı, §65)"
 
