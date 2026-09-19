@@ -335,6 +335,7 @@ class Anizm : MainAPI() {
         if (episodeHtml.isBlank()) return false
 
         var hdvidDelivered = false
+        var uqloadDelivered = false
 
         for (translatorUrl in TRANSLATOR_REGEX.findAll(episodeHtml).map { it.groupValues[1] }.distinct()) {
             // §105: HDVid — Beta Player'dan bağımsız AYRI source (tek gerçek kalite 360p;
@@ -477,11 +478,11 @@ class Anizm : MainAPI() {
         } catch (_: Exception) {
             return null
         }
-        val unpacked = getAndUnpack(playerHtml)
+        val unpacked = unpackPackedEvalJs(playerHtml) ?: return null
         val masterMatch = Regex("""file\s*:\s*"([^"]+master\.m3u8[^"]*)"""").find(unpacked) ?: return null
         return masterMatch.groupValues[1]
     }
-}
+
     private suspend fun fetchBetaPlayerVideoUrl(translatorUrl: String): String? {
         val body = try {
             app.get(translatorUrl, headers = XHR_HEADERS).text
@@ -559,5 +560,38 @@ class Anizm : MainAPI() {
             .map { Triple(it.groupValues[1], it.groupValues[2], it) }
             .lastOrNull()?.let { return it.first }
         return null
+    }
+
+    /**
+     * §107/§108B — UQload proxy player'ının packed-eval (p,a,c,k,e,d) JS'ini açar
+     * (radix36 + keys mantığı PowerShell'de canlı doğrulandı; getAndUnpack pre-release
+     * lib snapshot'ta çözülmediği için yerel yardımcı — UQload davranışı değişmez).
+     */
+    private fun unpackPackedEvalJs(html: String): String? {
+        val m = Regex(
+            "eval\\(function\\(p,a,c,k,e,d\\)\\{[\\s\\S]*?\\}\\('([\\s\\S]+?)',(\\d+),(\\d+),'([\\s\\S]+?)'\\.split\\('\\|'\\)",
+        ).find(html) ?: return null
+        var payload = m.groupValues[1]
+        val keys = m.groupValues[4].split("|")
+        val bs = "\\".single()
+        payload = payload
+            .replace("$bs$bs", bs.toString())
+            .replace("$bs/", "/")
+            .replace("$bs" + "\"", "\"")
+            .replace("$bs" + "'", "'")
+        return Regex("""\b([0-9a-z]+)\b""").replace(payload) { mm ->
+            val tok = mm.groupValues[1]
+            var n = 0
+            var valid = true
+            for (ch in tok) {
+                when (ch) {
+                    in '0'..'9' -> n = n * 36 + (ch - '0')
+                    in 'a'..'z' -> n = n * 36 + (ch.code - 87)
+                    else -> { valid = false; break }
+                }
+                if (n < 0) { valid = false; break }
+            }
+            if (valid && n < keys.size && keys[n].isNotEmpty()) keys[n] else mm.value
+        }
     }
 }
