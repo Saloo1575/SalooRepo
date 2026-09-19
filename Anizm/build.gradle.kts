@@ -4,7 +4,7 @@
 // Beta Player → pl.puffytr.tr/watch/<hash> → /stream/<hash>/native.m3u8 (HLS master;
 // gerçek kaliteler yalnız 480p/720p/1080p). Dizilla ile aynı modül kalıbı.
 
-version = 3
+version = 4
 
 cloudstream {
     authors = listOf("Saloo1575")

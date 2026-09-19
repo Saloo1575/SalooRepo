@@ -355,6 +355,7 @@ class Anizm : MainAPI() {
                 )
             }
             val betaVideoUrl = fetchBetaPlayerVideoUrl(translatorUrl) ?: continue
+            val uqloadMasterUrl = fetchUqloadMasterUrl(translatorUrl)
 
             // 2) /video/<videoId> → player iframe.
             val playerHtml = try {
@@ -403,15 +404,84 @@ class Anizm : MainAPI() {
                 // Varyantlar çözülemezse master link zaten sunuldu.
             }
             if (delivered) return true
+            // §107: UQload — Beta Player'dan bağımsız ayrı HLS source.
+            // Zincir (canlı kanıt): /video → /player/<id> → packed-eval JS →
+            // getAndUnpack → sources file master.m3u8 (strm*.uqload.vc) → 2×1080p variant.
+            uqloadMasterUrl?.let { masterUrl ->
+                var uqDelivered = false
+                try {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = name,
+                            name = "$name · UQload",
+                            url = masterUrl,
+                            type = ExtractorLinkType.M3U8,
+                        ) {
+                            this.headers = mapOf("User-Agent" to UA, "Referer" to "https://uqload.vc/")
+                            this.quality = Qualities.Unknown.value
+                        }
+                    )
+                    M3u8Helper.generateM3u8("$name · UQload", masterUrl, "https://uqload.vc/").forEach(callback)
+                    uqDelivered = true
+                } catch (_: Exception) {
+                    // Master link zaten sunuldu; varyantlar çözülemezse kayıp yok.
+                }
+                if (uqDelivered) uqloadDelivered = true
+            }
         }
-        // Beta Player hiç çalışmazsa bile HDVid tek kaynak olarak geçerli (§105).
-        return hdvidDelivered
+        // Beta Player hiç çalışmazsa bile HDVid/UQload tek kaynak olarak geçerli (§105/§107).
+        return hdvidDelivered || uqloadDelivered
     }
 
     /**
-     * Translator endpoint'i → alternatif listesi → "Beta Player" alternatifinin
-     * /video/<videoId> URL'i (keşif: data-video-name="Beta Player"; bulunamazsa null).
+     * Translator endpoint'i → alternatif listesi → "UQload" alternatifinin
+     * anizm proxy player'ının (anizm.com.tr/player/<videoId>) packed-eval JS'indeki
+     * sources[].file HLS master URL'i.
+     * §107 canlı kanıt: master.m3u8 (strm*.uqload.vc) → 2×1080p variant
+     * (index-v1-a1.m3u8 1.750.852 bps + frames-v1-a1.m3u8 4.975.172 bps).
+     * getAndUnpack (CloudStream built-in) packed eval'ı açar.
      */
+    private suspend fun fetchUqloadMasterUrl(translatorUrl: String): String? {
+        val body = try {
+            app.get(translatorUrl, headers = XHR_HEADERS).text
+        } catch (_: Exception) {
+            return null
+        }
+        val dataHtml = try {
+            JSONObject(body).optString("data")
+        } catch (_: Exception) {
+            return null
+        }
+        if (dataHtml.isBlank()) return null
+
+        var uqloadVideoUrl: String? = null
+        for (match in ALTERNATIVE_REGEX.findAll(dataHtml)) {
+            if (match.groupValues[2].trim().equals("UQload", ignoreCase = true)) {
+                uqloadVideoUrl = match.groupValues[1]
+                break
+            }
+        }
+        if (uqloadVideoUrl == null) return null
+
+        val playerJson = try {
+            JSONObject(app.get(uqloadVideoUrl, headers = XHR_HEADERS).text)
+                .optString("player")
+        } catch (_: Exception) {
+            return null
+        }
+        if (playerJson.isBlank()) return null
+
+        val playerUrl = IFRAME_SRC_REGEX.find(playerJson)?.groupValues?.get(1) ?: return null
+        val playerHtml = try {
+            app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/")).text
+        } catch (_: Exception) {
+            return null
+        }
+        val unpacked = getAndUnpack(playerHtml)
+        val masterMatch = Regex("""file\s*:\s*"([^"]+master\.m3u8[^"]*)"""").find(unpacked) ?: return null
+        return masterMatch.groupValues[1]
+    }
+}
     private suspend fun fetchBetaPlayerVideoUrl(translatorUrl: String): String? {
         val body = try {
             app.get(translatorUrl, headers = XHR_HEADERS).text
