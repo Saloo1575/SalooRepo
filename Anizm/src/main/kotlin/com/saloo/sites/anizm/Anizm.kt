@@ -30,17 +30,20 @@
 package com.saloo.sites.anizm
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import okhttp3.Interceptor
+import okhttp3.Response
 import org.json.JSONObject
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
 class Anizm : MainAPI() {
-    override var mainUrl = "https://anizm.com.tr"
+    override var mainUrl = "https://anizm.net"
     // §93: kullanıcıya görünen provider adı — "SiteAdı [Saloo]" ad kuralı.
     override var name = "Anizm [Saloo]"
     // §93: ana sayfa provider listesine girebilmesi için zorunlu (Sourcegraph kanıtı:
@@ -51,6 +54,36 @@ class Anizm : MainAPI() {
     // beyan eder → Animeler chip'inde de listelenir. TvSeries korunur (search/load
     // TvSeries döndürüyor, §90 akışı bozulmaz).
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Anime)
+
+    // §119: anizm.net Cloudflare challenge'lı (canlı 403 kanıtı: ana sayfa, admin-ajax,
+    // searchAnime — hem desktop hem mobile UA; .com.tr hâlâ 200 ama .net yeni kanonik
+    // domain — .com.tr ana sayfası kendisi anizm.net'e link veriyor). DDizi deseni:
+    // yalnız challenge/403/503 yanıtında CloudflareKiller devreye girer; normal yanıtlar
+    // aynen geçer (mevcut .com.tr/.net akışını bozmaz).
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller) : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val response = chain.proceed(request)
+            val bodySample = try {
+                response.peekBody(1024 * 1024).string()
+            } catch (_: Exception) {
+                ""
+            }
+            if (
+                bodySample.contains("Just a moment", ignoreCase = true)
+                || bodySample.contains("cf-browser-verification")
+                || bodySample.contains("Checking your browser")
+                || response.code in listOf(403, 503, 429)
+            ) {
+                response.close()
+                return cloudflareKiller.intercept(chain)
+            }
+            return response
+        }
+    }
 
     companion object {
         private const val UA =
@@ -64,7 +97,8 @@ class Anizm : MainAPI() {
         private val XHR_HEADERS = mapOf(
             "User-Agent" to UA,
             "X-Requested-With" to "XMLHttpRequest",
-            "Referer" to "https://anizm.com.tr/",
+            // §119: .net'e geçiş — XHR Referer ana domain'e hizalandı.
+            "Referer" to "https://anizm.net/",
         )
 
         private const val SEARCH_PATH = "/searchAnime"
@@ -73,15 +107,15 @@ class Anizm : MainAPI() {
 
         /** Detay sayfasındaki bölüm linkleri (keşif: -N-bolum ve -N-bolum-izle formları). */
         private val EPISODE_HREF_REGEX =
-            Regex("""href="https?://anizm\.com\.tr/([a-z0-9\-]+-\d+-bolum(?:-[a-z0-9]+)?)"""", RegexOption.IGNORE_CASE)
+            Regex("""href="https?://anizm\.(?:net|com\.tr)/([a-z0-9\-]+-\d+-bolum(?:-[a-z0-9]+)?)"""", RegexOption.IGNORE_CASE)
         private val EPISODE_NO_REGEX = Regex("""-(\d+)-bolum""", RegexOption.IGNORE_CASE)
 
         /** Bölüm sayfasındaki fansub/çevirmen endpoint'leri. */
-        private val TRANSLATOR_REGEX = Regex("""translator="(https://anizm\.com\.tr/episode/\d+/translator/\d+)"""")
+        private val TRANSLATOR_REGEX = Regex("""translator="(https://anizm\.(?:net|com\.tr)/episode/\d+/translator/\d+)"""")
 
         /** Alternatif (video sunucusu) butonları. */
         private val ALTERNATIVE_REGEX =
-            Regex("""video="(https://anizm\.com\.tr/video/\d+)" data-playerclick data-video-name="([^"]+)"""")
+            Regex("""video="(https://anizm\.(?:net|com\.tr)/video/\d+)" data-playerclick data-video-name="([^"]+)"""")
 
         private val IFRAME_SRC_REGEX =
             Regex("""<iframe[^>]*src="(https?://[^"]+)"""", RegexOption.IGNORE_CASE)
@@ -101,7 +135,7 @@ class Anizm : MainAPI() {
             "?query=" + URLEncoder.encode(query, "UTF-8") +
             "&page=1&type=detailed&limit=10&priorityField=info_title&orderBy=info_year&orderDirection=ASC"
         val body = try {
-            app.get(requestUrl, headers = XHR_HEADERS).text
+            app.get(requestUrl, headers = XHR_HEADERS, interceptor = interceptor).text
         } catch (_: Exception) {
             return emptyList()
         }
@@ -158,7 +192,7 @@ class Anizm : MainAPI() {
     private val CARD_EPISODE_REGEX = Regex("""(\d+)\.\s?B[öo]l[üu]m""", RegexOption.IGNORE_CASE)
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(request.data, headers = mapOf("User-Agent" to UA)).document
+        val document = app.get(request.data, headers = mapOf("User-Agent" to UA), interceptor = interceptor).document
 
         // Kartlar + gün başlıkları belge sırasında taranır. Seçiciler YALNIZ canlı
         // doğrulanmış desenlere dayanır: bölüm linkli <a> (href'te "-bolum") + içinde
@@ -232,7 +266,7 @@ class Anizm : MainAPI() {
     // --------------------------------------------------------------- LOAD
 
     override suspend fun load(url: String): LoadResponse {
-        val html = app.get(url, headers = mapOf("User-Agent" to UA)).text
+        val html = app.get(url, headers = mapOf("User-Agent" to UA), interceptor = interceptor).text
         if (html.isBlank()) throw ErrorLoadingException("Anizm: detay sayfası boş döndü ($url)")
 
         val title = extractTitle(html)
@@ -328,7 +362,7 @@ class Anizm : MainAPI() {
         // 1) Bölüm sayfası → translator endpoint'leri (birden fazla fansub olabilir;
         //    site da ilkini otomatik seçiyor — keşif: EP1'de tek fansub LeoSubs).
         val episodeHtml = try {
-            app.get(episodeUrl, headers = mapOf("User-Agent" to UA)).text
+            app.get(episodeUrl, headers = mapOf("User-Agent" to UA), interceptor = interceptor).text
         } catch (_: Exception) {
             return false
         }
@@ -362,7 +396,8 @@ class Anizm : MainAPI() {
             val playerHtml = try {
                 val body = app.get(
                     betaVideoUrl,
-                    headers = XHR_HEADERS + mapOf("Referer" to episodeUrl)
+                    headers = XHR_HEADERS + mapOf("Referer" to episodeUrl),
+                    interceptor = interceptor
                 ).text
                 JSONObject(body).optString("player")
             } catch (_: Exception) {
@@ -374,7 +409,7 @@ class Anizm : MainAPI() {
 
             // 3) /player/<videoId> → pl.puffytr.tr/watch/<hash> (redirect takibi).
             val watchHtml = try {
-                app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to episodeUrl)).text
+                app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to episodeUrl), interceptor = interceptor).text
             } catch (_: Exception) {
                 null
             } ?: continue
@@ -444,7 +479,7 @@ class Anizm : MainAPI() {
      */
     private suspend fun fetchUqloadMasterUrl(translatorUrl: String): String? {
         val body = try {
-            app.get(translatorUrl, headers = XHR_HEADERS).text
+            app.get(translatorUrl, headers = XHR_HEADERS, interceptor = interceptor).text
         } catch (_: Exception) {
             return null
         }
@@ -465,7 +500,7 @@ class Anizm : MainAPI() {
         if (uqloadVideoUrl == null) return null
 
         val playerJson = try {
-            JSONObject(app.get(uqloadVideoUrl, headers = XHR_HEADERS).text)
+            JSONObject(app.get(uqloadVideoUrl, headers = XHR_HEADERS, interceptor = interceptor).text)
                 .optString("player")
         } catch (_: Exception) {
             return null
@@ -474,7 +509,7 @@ class Anizm : MainAPI() {
 
         val playerUrl = IFRAME_SRC_REGEX.find(playerJson)?.groupValues?.get(1) ?: return null
         val playerHtml = try {
-            app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/")).text
+            app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/"), interceptor = interceptor).text
         } catch (_: Exception) {
             return null
         }
@@ -485,7 +520,7 @@ class Anizm : MainAPI() {
 
     private suspend fun fetchBetaPlayerVideoUrl(translatorUrl: String): String? {
         val body = try {
-            app.get(translatorUrl, headers = XHR_HEADERS).text
+            app.get(translatorUrl, headers = XHR_HEADERS, interceptor = interceptor).text
         } catch (_: Exception) {
             return null
         }
@@ -513,7 +548,7 @@ class Anizm : MainAPI() {
      */
     private suspend fun fetchHdvidMp4Url(translatorUrl: String): String? {
         val body = try {
-            app.get(translatorUrl, headers = XHR_HEADERS).text
+            app.get(translatorUrl, headers = XHR_HEADERS, interceptor = interceptor).text
         } catch (_: Exception) {
             return null
         }
@@ -534,7 +569,7 @@ class Anizm : MainAPI() {
         if (hdvidVideoUrl == null) return null
 
         val playerHtml = try {
-            JSONObject(app.get(hdvidVideoUrl, headers = XHR_HEADERS).text)
+            JSONObject(app.get(hdvidVideoUrl, headers = XHR_HEADERS, interceptor = interceptor).text)
                 .optString("player")
         } catch (_: Exception) {
             return null
@@ -547,7 +582,7 @@ class Anizm : MainAPI() {
         IFRAME_SRC_REGEX.find(playerHtml)?.groupValues?.get(1)?.let { inner ->
             if (inner.startsWith("$mainUrl/player/")) {
                 html = try {
-                    app.get(inner, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/")).text
+                    app.get(inner, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/"), interceptor = interceptor).text
                 } catch (_: Exception) {
                     return null
                 }
