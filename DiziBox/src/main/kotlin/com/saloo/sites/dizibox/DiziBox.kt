@@ -16,7 +16,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class DiziBox : MainAPI() {
-    override var mainUrl              = "https://www.dizibox.lol"
+    override var mainUrl              = "https://www.dizibox.live"
     override var name                 = "DiziBox [Saloo]"
     override val hasMainPage          = true
     override var lang                 = "tr"
@@ -243,8 +243,12 @@ class DiziBox : MainAPI() {
         val sources = mutableListOf(data)
         document.select("div.video-toolbar option[value]").forEach { opt ->
             val valUrl = opt.attr("value")
-            if (!valUrl.startsWith("http") && !sources.contains(valUrl)) {
-                sources.add(valUrl)
+            if (valUrl.isNotBlank() && !sources.contains(valUrl)) {
+                // §117: .live toolbar option value'ları MUTLAK sayfa URL'leri
+                // (…-izle/ Moly+ /2/, Odnok /3/); eski "!startsWith(http)" filtresi
+                // bunları yutuyordu. Relative değerler fixUrl ile absolute olur
+                // (.lol uyumu korunur).
+                sources.add(fixUrl(valUrl))
             }
         }
 
@@ -279,7 +283,10 @@ class DiziBox : MainAPI() {
         callback         : (ExtractorLink) -> Unit
     ): Boolean {
         when {
-            iframeUrl.contains("moly.php") -> {
+            // §117: generic moly.php embed'i loadExtractor'a; /player/moly/moly.php
+            // WRAPPER'ı ise aşağıdaki decode dalına düşmeli (wrapper URL'i
+            // loadExtractor'a gönderilemez — .live'da Moly+ iframe'i wrapper).
+            iframeUrl.contains("moly.php") && !iframeUrl.contains("/player/moly/moly.php") -> {
                 return loadExtractor(iframeUrl, sourceUrl, subtitleCallback, callback)
             }
 
@@ -350,7 +357,27 @@ class DiziBox : MainAPI() {
                         interceptor = interceptor
                     ).text
                     val m3u8Url = m3u8Data.lineSequence().firstOrNull { it.startsWith("http") }
-                    if (m3u8Url != null) {
+                        ?: return false
+
+                    // §117: sheila yanıtı GERÇEK master playlist (canlı doğrulandı:
+                    // RESOLUTION=1280x720 tek variant, segmentler dönen db5.*.xyz
+                    // hostlarında ve .png maskeli TS — uzantı kontrolü YOK,
+                    // ExoPlayer içerikten çözer). Master'daki TÜM gerçek variantlar
+                    // gerçek RESOLUTION kalitesi ile aktarılır (kalite uydurma YOK).
+                    val linkHeaders = mapOf(
+                        "Referer" to finalEmbed,
+                        // §117 kanıtı: kısa UA ile segment CDN'i 403, tam Chrome UA +
+                        // Referer ile 206 → UA zorunlu.
+                        "user-agent" to USER_AGENT
+                    )
+
+                    val variantRegex = Regex(
+                        """#EXT-X-STREAM-INF:[^\r\n]*RESOLUTION=(\d+)x(\d+)[^\r\n]*\r?\n([^\r\n#][^\r\n]*)"""
+                    )
+                    val variants = variantRegex.findAll(m3u8Data).toList()
+
+                    if (variants.isEmpty()) {
+                        // Master parse edilemedi → ham ilk URL (Unknown) ile fallback.
                         callback.invoke(
                             newExtractorLink(
                                 source = name,
@@ -358,15 +385,30 @@ class DiziBox : MainAPI() {
                                 url    = m3u8Url,
                                 type   = ExtractorLinkType.M3U8
                             ) {
-                                this.headers = mapOf("Referer" to finalEmbed)
-                                // §114 kalite kuralı: HLS gerçek kalitesi playlist'ten
-                                // gelir → uydurma 1080p etiketi kaldırıldı.
+                                this.headers = linkHeaders
                                 this.quality = Qualities.Unknown.value
                             }
                         )
                         return true
                     }
-                    return false
+
+                    variants.forEach { match ->
+                        val height = match.groupValues[2].toIntOrNull() ?: return@forEach
+                        val variantUrl = fixUrl(match.groupValues[3].trim())
+                        callback.invoke(
+                            newExtractorLink(
+                                source = name,
+                                name   = name,
+                                url    = variantUrl,
+                                type   = ExtractorLinkType.M3U8
+                            ) {
+                                this.headers = linkHeaders
+                                // GERÇEK kalite: master'daki RESOLUTION'dan.
+                                this.quality = getQualityFromName("${height}p")
+                            }
+                        )
+                    }
+                    return true
                 } else {
                     return loadExtractor(sheila, sourceUrl, subtitleCallback, callback)
                 }
