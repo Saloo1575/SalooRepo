@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.StringUtils.decodeUri
 import okhttp3.Interceptor
@@ -15,8 +16,8 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class DiziBox : MainAPI() {
-    override var mainUrl              = "https://www.dizibox.live"
-    override var name                 = "DiziBox"
+    override var mainUrl              = "https://www.dizibox.lol"
+    override var name                 = "DiziBox [Saloo]"
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = true
@@ -247,6 +248,7 @@ class DiziBox : MainAPI() {
             }
         }
 
+        var delivered = false
         sources.forEach { sourceUrl ->
             val sourceDoc = app.get(
                 sourceUrl,
@@ -254,13 +256,19 @@ class DiziBox : MainAPI() {
                 interceptor = interceptor
             ).document
 
+            // §114: iframe src relative olabilir → absolute'a çevir (görev şartı;
+            // mutlak URL'lerde fixUrl no-op kalır).
             val srcIframe = sourceDoc.selectFirst("div#video-area iframe")?.attr("src")
+                ?.let { fixUrl(it) }
                 ?: return@forEach
 
-            processIframe(srcIframe, sourceUrl, data, subtitleCallback, callback)
+            if (processIframe(srcIframe, sourceUrl, data, subtitleCallback, callback)) {
+                delivered = true
+            }
         }
 
-        return true
+        // §114: hiçbir gerçek kaynak callback edilmediyse false döndür (sahte link YOK).
+        return delivered
     }
 
     private suspend fun processIframe(
@@ -269,10 +277,54 @@ class DiziBox : MainAPI() {
         referer          : String,
         subtitleCallback : (SubtitleFile) -> Unit,
         callback         : (ExtractorLink) -> Unit
-    ) {
+    ): Boolean {
         when {
             iframeUrl.contains("moly.php") -> {
-                loadExtractor(iframeUrl, sourceUrl, subtitleCallback, callback)
+                return loadExtractor(iframeUrl, sourceUrl, subtitleCallback, callback)
+            }
+
+            // §114: SpidyPro embed (görev iskeletinde doğrulanmış iframe host'u).
+            // Embed'in video ucu canlı doğrulanamadı (görev notu + bu oturumda 2x
+            // fetch timeout) → SAHTE link/kalite ÜRETİLMEZ: embed HTML'inde GERÇEK
+            // m3u8/mp4 sinyali aranır; bulunamazsa hiçbir ExtractorLink verilmez
+            // ve loadLinks false döner.
+            iframeUrl.contains("spidypro") -> {
+                val embedBody = runCatching {
+                    app.get(
+                        iframeUrl,
+                        referer     = referer,
+                        cookies     = baseCookies,
+                        interceptor = interceptor
+                    ).text
+                }.getOrNull() ?: return false
+
+                val videoUrl = Regex("""https?://[^\s"'<>\\]+?\.m3u8[^\s"'<>\\]*""").find(embedBody)?.value
+                    ?: Regex("""https?://[^\s"'<>\\]+?\.mp4[^\s"'<>\\]*""").find(embedBody)?.value
+                    ?: Regex("""(?:file|source|playlist)\s*[:=]\s*["'](https?://[^"']+?\.(?:m3u8|mp4)[^"']*)["']""").find(embedBody)?.groupValues?.get(1)
+                    ?: return false
+
+                val isHls = videoUrl.contains(".m3u8")
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name   = name,
+                        url    = videoUrl,
+                        type   = if (isHls) ExtractorLinkType.M3U8 else INFER_TYPE
+                    ) {
+                        // Header ihtiyacı canlı doğrulanamadı: yalnız embed sayfası
+                        // Referer'i (zararsız varsayım); fazladan header EKLENMEDİ.
+                        // Gerçek kalite listesi doğrulanamadığından uydurma kalite YOK.
+                        this.headers = mapOf("Referer" to iframeUrl)
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+                // HLS ise master playlist'teki GERÇEK variantların tamamı aktarılır
+                // (kalite kaybı yok); URL bir media playlist ise helper boş döner ve
+                // tek link oynatmaya kalır (ExoPlayer her iki tipi çözer).
+                if (isHls) {
+                    M3u8Helper.generateM3u8(name, videoUrl, iframeUrl).forEach(callback)
+                }
+                return true
             }
 
             iframeUrl.contains("php?v=") -> {
@@ -285,7 +337,7 @@ class DiziBox : MainAPI() {
                 ).document
 
                 val finalEmbed = playerDoc.selectFirst("div#Player iframe")?.attr("src")
-                    ?: return
+                    ?: return false
 
                 val sheila = finalEmbed
                     .replace("/embed/", "/embed/sheila/")
@@ -307,12 +359,16 @@ class DiziBox : MainAPI() {
                                 type   = ExtractorLinkType.M3U8
                             ) {
                                 this.headers = mapOf("Referer" to finalEmbed)
-                                this.quality = Qualities.P1080.value
+                                // §114 kalite kuralı: HLS gerçek kalitesi playlist'ten
+                                // gelir → uydurma 1080p etiketi kaldırıldı.
+                                this.quality = Qualities.Unknown.value
                             }
                         )
+                        return true
                     }
+                    return false
                 } else {
-                    loadExtractor(sheila, sourceUrl, subtitleCallback, callback)
+                    return loadExtractor(sheila, sourceUrl, subtitleCallback, callback)
                 }
             }
 
@@ -324,13 +380,13 @@ class DiziBox : MainAPI() {
                     cookies     = baseCookies,
                     interceptor = interceptor
                 ).document
-                val subFrame = subDoc.selectFirst("div#Player iframe")?.attr("src") ?: return
+                val subFrame = subDoc.selectFirst("div#Player iframe")?.attr("src") ?: return false
 
                 val iDoc      = app.get(subFrame, referer = "$mainUrl/").text
-                val cryptData = Regex("""CryptoJS\.AES\.decrypt\("(.*)","""""").find(iDoc)?.groupValues?.get(1) ?: return
-                val cryptPass = Regex(""""","(.*)"\);""").find(iDoc)?.groupValues?.get(1) ?: return
+                val cryptData = Regex("""CryptoJS\.AES\.decrypt\("(.*)","""""").find(iDoc)?.groupValues?.get(1) ?: return false
+                val cryptPass = Regex(""""","(.*)"\);""").find(iDoc)?.groupValues?.get(1) ?: return false
                 val decrypted = CryptoJS.decrypt(cryptPass, cryptData)
-                val vidUrl    = Regex("""file: '(.*)',""").find(Jsoup.parse(decrypted).html())?.groupValues?.get(1) ?: return
+                val vidUrl    = Regex("""file: '(.*)',""").find(Jsoup.parse(decrypted).html())?.groupValues?.get(1) ?: return false
 
                 callback.invoke(
                     newExtractorLink(
@@ -340,9 +396,11 @@ class DiziBox : MainAPI() {
                         type   = ExtractorLinkType.M3U8
                     ) {
                         this.headers = mapOf("Referer" to vidUrl)
-                        this.quality = Qualities.P1080.value
+                        // §114 kalite kuralı: gerçek kalite doğrulanamadı → uydurma YOK.
+                        this.quality = Qualities.Unknown.value
                     }
                 )
+                return true
             }
 
             iframeUrl.contains("/player/moly/moly.php") || iframeUrl.contains("/player/haydi.php") -> {
@@ -363,12 +421,12 @@ class DiziBox : MainAPI() {
                     subDoc = Jsoup.parse(decoded)
                 }
 
-                val subFrame = subDoc.selectFirst("div#Player iframe")?.attr("src") ?: return
-                loadExtractor(subFrame, "$mainUrl/", subtitleCallback, callback)
+                val subFrame = subDoc.selectFirst("div#Player iframe")?.attr("src") ?: return false
+                return loadExtractor(subFrame, "$mainUrl/", subtitleCallback, callback)
             }
 
             else -> {
-                loadExtractor(iframeUrl, sourceUrl, subtitleCallback, callback)
+                return loadExtractor(iframeUrl, sourceUrl, subtitleCallback, callback)
             }
         }
     }
