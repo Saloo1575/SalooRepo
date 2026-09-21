@@ -29,6 +29,7 @@
 
 package com.saloo.sites.anizm
 
+import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -86,6 +87,8 @@ class Anizm : MainAPI() {
     }
 
     companion object {
+        // §124: geçici teşhis logları (kaldırılacak).
+        private const val TAG = "AnizmDiag"
         private const val UA =
             "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
@@ -358,26 +361,45 @@ class Anizm : MainAPI() {
     ): Boolean {
         val episodeUrl = data.trim()
         if (episodeUrl.isBlank()) return false
+        Log.d(TAG, "loadLinks: START episodeUrl=$episodeUrl")
 
         // 1) Bölüm sayfası → translator endpoint'leri (birden fazla fansub olabilir;
         //    site da ilkini otomatik seçiyor — keşif: EP1'de tek fansub LeoSubs).
         val episodeHtml = try {
             app.get(episodeUrl, headers = mapOf("User-Agent" to UA), interceptor = interceptor).text
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "loadLinks: episode fetch FAILED: ${e.message}")
             return false
         }
-        if (episodeHtml.isBlank()) return false
+        if (episodeHtml.isBlank()) {
+            Log.d(TAG, "loadLinks: episodeHtml BLANK")
+            return false
+        }
+        Log.d(TAG, "loadLinks: episodeHtml length=${episodeHtml.length}")
 
         var hdvidDelivered = false
         var uqloadDelivered = false
 
-        for (translatorUrl in TRANSLATOR_REGEX.findAll(episodeHtml).map { it.groupValues[1] }.distinct()) {
+        // §124: teslim edilen toplam link sayısını izlemek için sarmalayıcı (davranış aynı).
+        var deliveredCount = 0
+        val countingCallback: (ExtractorLink) -> Unit = { link ->
+            deliveredCount++
+            Log.d(TAG, "loadLinks: LINK DELIVERED #$deliveredCount url=${link.url}")
+            callback(link)
+        }
+
+        val translatorMatches = TRANSLATOR_REGEX.findAll(episodeHtml)
+            .map { it.groupValues[1] }.distinct().toList()
+        Log.d(TAG, "loadLinks: translator match count=${translatorMatches.size}")
+        for (translatorUrl in translatorMatches) {
+            Log.d(TAG, "loadLinks: translator=$translatorUrl")
             // §105: HDVid — Beta Player'dan bağımsız AYRI source (tek gerçek kalite 360p;
             // canlı kanıt: /video → /player/<id> iframe-in-iframe → sources file v.mp4 206).
             val hdvidMp4Url = fetchHdvidMp4Url(translatorUrl)
             if (hdvidMp4Url != null) {
                 hdvidDelivered = true
-                callback.invoke(
+                Log.d(TAG, "HDVid: delivering url=$hdvidMp4Url")
+                countingCallback.invoke(
                     newExtractorLink(
                         source = name,
                         name = "$name · HDVid",
@@ -388,33 +410,59 @@ class Anizm : MainAPI() {
                         this.quality = Qualities.P360.value
                     }
                 )
+            } else {
+                Log.d(TAG, "HDVid: no MP4 URL for this translator")
             }
-            val betaVideoUrl = fetchBetaPlayerVideoUrl(translatorUrl) ?: continue
+            val betaVideoUrl = fetchBetaPlayerVideoUrl(translatorUrl)
+            if (betaVideoUrl == null) {
+                Log.d(TAG, "Beta: /video URL NOT FOUND for this translator")
+                continue
+            }
+            Log.d(TAG, "Beta: /video URL=$betaVideoUrl")
             val uqloadMasterUrl = fetchUqloadMasterUrl(translatorUrl)
+            Log.d(TAG, "UQload: masterUrl=${uqloadMasterUrl ?: "NOT FOUND"}")
 
             // 2) /video/<videoId> → player iframe.
             val playerHtml = try {
+                Log.d(TAG, "Beta: /video request start url=$betaVideoUrl")
                 val body = app.get(
                     betaVideoUrl,
                     headers = XHR_HEADERS + mapOf("Referer" to episodeUrl),
                     interceptor = interceptor
                 ).text
+                Log.d(TAG, "Beta: /video response length=${body.length}")
                 JSONObject(body).optString("player")
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d(TAG, "Beta: /video FAILED: ${e.message}")
                 null
             } ?: continue
-            if (playerHtml.isBlank()) continue
+            if (playerHtml.isBlank()) {
+                Log.d(TAG, "Beta: playerHtml BLANK")
+                continue
+            }
 
-            val playerUrl = IFRAME_SRC_REGEX.find(playerHtml)?.groupValues?.get(1) ?: continue
+            val playerUrl = IFRAME_SRC_REGEX.find(playerHtml)?.groupValues?.get(1)
+            if (playerUrl == null) {
+                Log.d(TAG, "Beta: player iframe NOT FOUND in /video response")
+                continue
+            }
+            Log.d(TAG, "Beta: playerUrl=$playerUrl")
 
             // 3) /player/<videoId> → pl.puffytr.tr/watch/<hash> (redirect takibi).
             val watchHtml = try {
+                Log.d(TAG, "Beta: /player request start url=$playerUrl")
                 app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to episodeUrl), interceptor = interceptor).text
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d(TAG, "Beta: /player FAILED: ${e.message}")
                 null
             } ?: continue
 
-            val hash = STREAM_REGEX.find(watchHtml)?.groupValues?.get(1) ?: continue
+            val hash = STREAM_REGEX.find(watchHtml)?.groupValues?.get(1)
+            if (hash == null) {
+                Log.d(TAG, "Beta: STREAM_REGEX NOT FOUND (watchHtml length=${watchHtml.length})")
+                continue
+            }
+            Log.d(TAG, "Beta: hash=$hash")
             // Keşif + canlı test kanıtı: taze imzalı varyant tokenları yalnız master.txt
             // üretir (native.m3u8 bayat /mn/ token → 403). watch sayfasının VHS yolu master.txt.
             val masterUrl = "$PUFFY_HOST/stream/$hash/master.txt"
@@ -423,7 +471,8 @@ class Anizm : MainAPI() {
             // 4) GERÇEK varyantlar (480p/720p/1080p) M3u8Helper ile; kalite uydurulmaz.
             var delivered = false
             try {
-                callback.invoke(
+                Log.d(TAG, "Beta: delivering base master url=$masterUrl (watchUrl=$watchUrl)")
+                countingCallback.invoke(
                     newExtractorLink(
                         source = name,
                         name = "$name · $BETA_PLAYER_NAME",
@@ -434,9 +483,12 @@ class Anizm : MainAPI() {
                         this.quality = Qualities.Unknown.value
                     }
                 )
-                M3u8Helper.generateM3u8("$name · $BETA_PLAYER_NAME", masterUrl, watchUrl).forEach(callback)
+                val betaVariants = M3u8Helper.generateM3u8("$name · $BETA_PLAYER_NAME", masterUrl, watchUrl)
+                Log.d(TAG, "Beta: M3u8Helper variant count=${betaVariants.size}")
+                betaVariants.forEach(countingCallback)
                 delivered = true
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d(TAG, "Beta: delivery FAILED: ${e.message}")
                 // Varyantlar çözülemezse master link zaten sunuldu.
             }
             if (delivered) return true
@@ -446,7 +498,8 @@ class Anizm : MainAPI() {
             uqloadMasterUrl?.let { masterUrl ->
                 var uqDelivered = false
                 try {
-                    callback.invoke(
+                    Log.d(TAG, "UQload: delivering base master url=$masterUrl")
+                    countingCallback.invoke(
                         newExtractorLink(
                             source = name,
                             name = "$name · UQload",
@@ -457,14 +510,18 @@ class Anizm : MainAPI() {
                             this.quality = Qualities.Unknown.value
                         }
                     )
-                    M3u8Helper.generateM3u8("$name · UQload", masterUrl, "https://uqload.vc/").forEach(callback)
+                    val uqVariants = M3u8Helper.generateM3u8("$name · UQload", masterUrl, "https://uqload.vc/")
+                    Log.d(TAG, "UQload: M3u8Helper variant count=${uqVariants.size}")
+                    uqVariants.forEach(countingCallback)
                     uqDelivered = true
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.d(TAG, "UQload: delivery FAILED: ${e.message}")
                     // Master link zaten sunuldu; varyantlar çözülemezse kayıp yok.
                 }
                 if (uqDelivered) uqloadDelivered = true
             }
         }
+        Log.d(TAG, "loadLinks: END hdvidDelivered=$hdvidDelivered uqloadDelivered=$uqloadDelivered totalLinks=$deliveredCount")
         // Beta Player hiç çalışmazsa bile HDVid/UQload tek kaynak olarak geçerli (§105/§107).
         return hdvidDelivered || uqloadDelivered
     }
@@ -478,11 +535,14 @@ class Anizm : MainAPI() {
      * getAndUnpack (CloudStream built-in) packed eval'ı açar.
      */
     private suspend fun fetchUqloadMasterUrl(translatorUrl: String): String? {
+        Log.d(TAG, "UQload: translator fetch start url=$translatorUrl")
         val body = try {
             app.get(translatorUrl, headers = XHR_HEADERS, interceptor = interceptor).text
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "UQload: translator fetch FAILED: ${e.message}")
             return null
         }
+        Log.d(TAG, "UQload: translator response length=${body.length}")
         val dataHtml = try {
             JSONObject(body).optString("data")
         } catch (_: Exception) {
@@ -492,50 +552,86 @@ class Anizm : MainAPI() {
 
         var uqloadVideoUrl: String? = null
         for (match in ALTERNATIVE_REGEX.findAll(dataHtml)) {
+            Log.d(TAG, "UQload: alternative '${match.groupValues[2].trim()}' -> ${match.groupValues[1]}")
             if (match.groupValues[2].trim().equals("UQload", ignoreCase = true)) {
                 uqloadVideoUrl = match.groupValues[1]
                 break
             }
         }
-        if (uqloadVideoUrl == null) return null
+        if (uqloadVideoUrl == null) {
+            Log.d(TAG, "UQload: 'UQload' alternative NOT FOUND")
+            return null
+        }
+        Log.d(TAG, "UQload: /video URL=$uqloadVideoUrl")
 
         val playerJson = try {
+            Log.d(TAG, "UQload: /video request start")
             JSONObject(app.get(uqloadVideoUrl, headers = XHR_HEADERS, interceptor = interceptor).text)
                 .optString("player")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "UQload: /video request FAILED: ${e.message}")
             return null
         }
-        if (playerJson.isBlank()) return null
+        if (playerJson.isBlank()) {
+            Log.d(TAG, "UQload: playerJson BLANK")
+            return null
+        }
 
-        val playerUrl = IFRAME_SRC_REGEX.find(playerJson)?.groupValues?.get(1) ?: return null
+        val playerUrl = IFRAME_SRC_REGEX.find(playerJson)?.groupValues?.get(1)
+        if (playerUrl == null) {
+            Log.d(TAG, "UQload: player iframe NOT FOUND")
+            return null
+        }
+        Log.d(TAG, "UQload: playerUrl=$playerUrl")
         val playerHtml = try {
             app.get(playerUrl, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/"), interceptor = interceptor).text
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "UQload: /player fetch FAILED: ${e.message}")
             return null
         }
-        val unpacked = unpackPackedEvalJs(playerHtml) ?: return null
-        val masterMatch = Regex("""file\s*:\s*"([^"]+master\.m3u8[^"]*)"""").find(unpacked) ?: return null
+        val unpacked = unpackPackedEvalJs(playerHtml)
+        if (unpacked == null) {
+            Log.d(TAG, "UQload: unpackPackedEvalJs returned NULL (playerHtml length=${playerHtml.length})")
+            return null
+        }
+        val masterMatch = Regex("""file\s*:\s*"([^"]+master\.m3u8[^"]*)"""").find(unpacked) ?: run {
+            Log.d(TAG, "UQload: master.m3u8 regex NOT FOUND in unpacked JS")
+            return null
+        }
+        Log.d(TAG, "UQload: master URL found=${masterMatch.groupValues[1]}")
         return masterMatch.groupValues[1]
     }
 
     private suspend fun fetchBetaPlayerVideoUrl(translatorUrl: String): String? {
+        Log.d(TAG, "Beta: translator fetch start url=$translatorUrl")
         val body = try {
             app.get(translatorUrl, headers = XHR_HEADERS, interceptor = interceptor).text
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "Beta: translator fetch FAILED: ${e.message}")
             return null
         }
+        Log.d(TAG, "Beta: translator response length=${body.length}")
         val dataHtml = try {
             JSONObject(body).optString("data")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "Beta: translator JSON parse FAILED: ${e.message}")
             return null
         }
-        if (dataHtml.isBlank()) return null
+        if (dataHtml.isBlank()) {
+            Log.d(TAG, "Beta: dataHtml BLANK")
+            return null
+        }
 
-        for (match in ALTERNATIVE_REGEX.findAll(dataHtml)) {
+        val altMatches = ALTERNATIVE_REGEX.findAll(dataHtml).toList()
+        Log.d(TAG, "Beta: alternative match count=${altMatches.size}")
+        for (match in altMatches) {
+            Log.d(TAG, "Beta: alternative '${match.groupValues[2].trim()}' -> ${match.groupValues[1]}")
             if (match.groupValues[2].trim().equals(BETA_PLAYER_NAME, ignoreCase = true)) {
+                Log.d(TAG, "Beta: 'Beta Player' alternative FOUND")
                 return match.groupValues[1]
             }
         }
+        Log.d(TAG, "Beta: 'Beta Player' alternative NOT FOUND")
         return null
     }
 
@@ -547,49 +643,74 @@ class Anizm : MainAPI() {
      * uydurma yok). Dönüş: doğrudan MP4 ExtractorLink URL'i (Referer anizm.com.tr).
      */
     private suspend fun fetchHdvidMp4Url(translatorUrl: String): String? {
+        Log.d(TAG, "HDVid: translator fetch start url=$translatorUrl")
         val body = try {
             app.get(translatorUrl, headers = XHR_HEADERS, interceptor = interceptor).text
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "HDVid: translator fetch FAILED: ${e.message}")
             return null
         }
+        Log.d(TAG, "HDVid: translator response length=${body.length}")
         val dataHtml = try {
             JSONObject(body).optString("data")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "HDVid: translator JSON parse FAILED: ${e.message}")
             return null
         }
-        if (dataHtml.isBlank()) return null
+        if (dataHtml.isBlank()) {
+            Log.d(TAG, "HDVid: dataHtml BLANK")
+            return null
+        }
 
+        val altMatches = ALTERNATIVE_REGEX.findAll(dataHtml).toList()
+        Log.d(TAG, "HDVid: alternative match count=${altMatches.size}")
+        for (match in altMatches) {
+            Log.d(TAG, "HDVid: alternative '${match.groupValues[2].trim()}' -> ${match.groupValues[1]}")
+        }
         var hdvidVideoUrl: String? = null
-        for (match in ALTERNATIVE_REGEX.findAll(dataHtml)) {
+        for (match in altMatches) {
             if (match.groupValues[2].trim().equals("HDVid", ignoreCase = true)) {
                 hdvidVideoUrl = match.groupValues[1]
                 break
             }
         }
-        if (hdvidVideoUrl == null) return null
-
-        val playerHtml = try {
-            JSONObject(app.get(hdvidVideoUrl, headers = XHR_HEADERS, interceptor = interceptor).text)
-                .optString("player")
-        } catch (_: Exception) {
+        if (hdvidVideoUrl == null) {
+            Log.d(TAG, "HDVid: 'HDVid' alternative NOT FOUND")
             return null
         }
-        if (playerHtml.isBlank()) return null
+        Log.d(TAG, "HDVid: /video URL=$hdvidVideoUrl")
+
+        val playerHtml = try {
+            Log.d(TAG, "HDVid: /video request start")
+            JSONObject(app.get(hdvidVideoUrl, headers = XHR_HEADERS, interceptor = interceptor).text)
+                .optString("player")
+        } catch (e: Exception) {
+            Log.d(TAG, "HDVid: /video request FAILED: ${e.message}")
+            return null
+        }
+        if (playerHtml.isBlank()) {
+            Log.d(TAG, "HDVid: playerHtml BLANK")
+            return null
+        }
 
         var html = playerHtml
         // iframe-in-iframe: /video yanıtı bazen /player/<id>'yi iframe olarak verir
         // (canlı kanıt §105) → ikinci katmanı da GET et.
         IFRAME_SRC_REGEX.find(playerHtml)?.groupValues?.get(1)?.let { inner ->
+            Log.d(TAG, "HDVid: /video response iframe src=$inner")
             if (inner.startsWith("$mainUrl/player/")) {
                 html = try {
                     app.get(inner, headers = mapOf("User-Agent" to UA, "Referer" to "$mainUrl/"), interceptor = interceptor).text
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.d(TAG, "HDVid: inner /player fetch FAILED: ${e.message}")
                     return null
                 }
+                Log.d(TAG, "HDVid: inner /player HTML length=${html.length}")
             }
         }
         // HDVid'de doğrulanan tek gerçek kalite 360p; birden fazla kalite görürse
         // hepsi eklenir (§105 kalite kuralı — uydurma yok).
+        Log.d(TAG, "HDVid: checking sources in html length=${html.length}")
         Regex("""file\s*:\s*"([^"]+\.(?:mp4|m3u8))"\s*,\s*label\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
             .findAll(html)
             .map { Triple(it.groupValues[1], it.groupValues[2], it) }
