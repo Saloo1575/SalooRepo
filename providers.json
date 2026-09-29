@@ -62,11 +62,12 @@
     {
       "siteId": "dizimom",
       "name": "DiziMom",
-      "url": "https://dizimom.cam",
-      "canonicalDomain": "dizimom.cam",
+      "url": "https://dizimom.help",
+      "canonicalDomain": "dizimom.help",
       "lastWorkingDomain": "dizimom.help",
       "aliases": [
         "dizimom.beer",
+        "dizimom.cam",
         "dizimom.diy",
         "dizimom.plus"
       ],
@@ -78,7 +79,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Dizi izle - Dizimom | Yabancı dizi izle",
-      "lastChecked": "2026-09-29T09:49:59Z",
+      "lastChecked": "2026-09-29T10:08:24Z",
       "lastError": "HTTP 403 on /",
       "internalNames": [
         "DiziMom"
