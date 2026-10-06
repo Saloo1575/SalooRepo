@@ -16,7 +16,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Internet Archive: Digital Library of Free &amp; Borrowable Texts, Movies, Music &amp; Wayback Machine",
-      "lastChecked": "2026-10-05T10:26:45Z",
+      "lastChecked": "2026-10-06T10:18:01Z",
       "lastError": null
     },
     {
@@ -35,7 +35,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Blender Studio",
-      "lastChecked": "2026-10-05T10:26:45Z",
+      "lastChecked": "2026-10-06T10:18:02Z",
       "lastError": null
     },
     {
@@ -53,7 +53,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "DiziBOX - Yabancı Dizi izle, Yabancı Diziler",
-      "lastChecked": "2026-10-05T10:26:46Z",
+      "lastChecked": "2026-10-06T10:18:02Z",
       "lastError": "HTTP 403 on /",
       "internalNames": [
         "DiziBox"
@@ -72,7 +72,7 @@
         "dizimom.help",
         "dizimom.plus"
       ],
-      "status": "degraded",
+      "status": "active",
       "category": "community",
       "contentTypes": [
         "series"
@@ -80,8 +80,8 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Dizi izle - Dizimom | Yabancı dizi izle",
-      "lastChecked": "2026-10-05T10:26:46Z",
-      "lastError": "HTTP 403 on /",
+      "lastChecked": "2026-10-06T10:18:04Z",
+      "lastError": null,
       "internalNames": [
         "DiziMom"
       ]
@@ -103,7 +103,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "ÇizgiMax - HD Çizgi Film İzle",
-      "lastChecked": "2026-10-05T10:26:46Z",
+      "lastChecked": "2026-10-06T10:18:04Z",
       "lastError": "HTTP 403 on /",
       "internalNames": [
         "CizgiMax"
@@ -124,7 +124,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Ddizi, dizi izle, dizi seyret, dizi, canlı dizi, ddizi.im",
-      "lastChecked": "2026-10-05T10:26:46Z",
+      "lastChecked": "2026-10-06T10:18:04Z",
       "lastError": null,
       "internalNames": [
         "DDizi"
@@ -145,7 +145,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Diziyou - Türkçe Dublaj & Altyazılı Yabancı Dizi İzle",
-      "lastChecked": "2026-10-05T10:26:46Z",
+      "lastChecked": "2026-10-06T10:18:04Z",
       "lastError": "HTTP 403 on /",
       "internalNames": [
         "DiziYou"
@@ -166,7 +166,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Anime İzle | Anizm | Türkçe Altyazılı Anime İzle",
-      "lastChecked": "2026-10-05T10:26:47Z",
+      "lastChecked": "2026-10-06T10:18:05Z",
       "lastError": "HTTP 403 on /",
       "internalNames": [
         "Anizm"
