@@ -112,10 +112,12 @@
     {
       "siteId": "ddizi",
       "name": "DDizi",
-      "url": "https://www.ddizi.im",
-      "canonicalDomain": "ddizi.im",
+      "url": "https://ddizi.tel",
+      "canonicalDomain": "ddizi.tel",
       "lastWorkingDomain": "ddizi.tel",
-      "aliases": [],
+      "aliases": [
+        "ddizi.im"
+      ],
       "status": "active",
       "category": "community",
       "contentTypes": [
@@ -124,7 +126,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Ddizi, dizi izle, dizi seyret, dizi, canlı dizi, ddizi.im",
-      "lastChecked": "2026-10-07T10:16:32Z",
+      "lastChecked": "2026-10-07T10:34:52Z",
       "lastError": null,
       "internalNames": [
         "DDizi"
