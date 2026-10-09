@@ -62,15 +62,16 @@
     {
       "siteId": "dizimom",
       "name": "DiziMom",
-      "url": "https://dizimom.wiki",
-      "canonicalDomain": "dizimom.wiki",
-      "lastWorkingDomain": "dizimom.wiki",
+      "url": "https://dizimom.cafe",
+      "canonicalDomain": "dizimom.cafe",
+      "lastWorkingDomain": "dizimom.cafe",
       "aliases": [
         "dizimom.beer",
         "dizimom.cam",
         "dizimom.diy",
         "dizimom.help",
-        "dizimom.plus"
+        "dizimom.plus",
+        "dizimom.wiki"
       ],
       "status": "active",
       "category": "community",
@@ -80,7 +81,7 @@
       "enabled": true,
       "probePath": "/",
       "titleSignature": "Dizi izle - Dizimom | Yabancı dizi izle",
-      "lastChecked": "2026-10-07T10:16:31Z",
+      "lastChecked": "2026-10-09T10:54:47Z",
       "lastError": null,
       "internalNames": [
         "DiziMom"
